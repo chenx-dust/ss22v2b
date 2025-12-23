@@ -1,0 +1,15 @@
+[package]
+name = "ss22v2b"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+async-trait = "0.1.89"
+env_logger = "0.11.8"
+reqwest = { version = "0.12.28", features = ["json"] }
+serde = "1.0.228"
+serde_json = "1.0.146"
+shadowsocks-service = { version = "1.24.0", features = ["aead-cipher-2022", "server"] }
+tokio = "1.48.0"
+toml = "0.9.10"
