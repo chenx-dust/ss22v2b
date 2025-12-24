@@ -1,7 +1,19 @@
 use super::*;
+use log::info;
 use std::fs;
+use std::sync::Once;
+
+static INIT_LOGGER: Once = Once::new();
+
+fn init_logger() {
+    INIT_LOGGER.call_once(|| {
+        let _ = env_logger::builder().is_test(true).try_init();
+    });
+}
 
 fn load_config_from_toml() -> ApiConfig {
+    init_logger();
+
     let config_str = fs::read_to_string("config.toml").expect("cannot read config.toml");
     let config: ApiConfig = toml::from_str(&config_str).expect("cannot parse config.toml");
 
@@ -17,10 +29,10 @@ fn load_config_from_toml() -> ApiConfig {
 fn load_config_test() {
     let config = load_config_from_toml();
 
-    println!("API Host: {}", config.api_host);
-    println!("Node ID: {}", config.node_id);
-    println!("Key: {}", config.key);
-    println!("Timeout: {}", config.timeout);
+    info!("API Host: {}", config.api_host);
+    info!("Node ID: {}", config.node_id);
+    info!("Key: {}", config.key);
+    info!("Timeout: {}", config.timeout);
 }
 
 #[tokio::test]
@@ -29,7 +41,7 @@ async fn get_node_info_test() {
     let client = ApiClient::new(config).expect("cannot new ApiClient");
     let node_info = client.get_node_info().await.expect("cannot get node info");
 
-    println!("{:?}", node_info);
+    info!("{:?}", node_info);
 }
 
 #[tokio::test]
@@ -38,5 +50,16 @@ async fn get_user_list_test() {
     let client = ApiClient::new(config).expect("cannot new ApiClient");
     let user_list = client.get_user_list().await.expect("cannot get user list");
 
-    println!("{:?}", user_list);
+    info!("{:?}", user_list);
+}
+
+#[tokio::test]
+async fn combined_test() {
+    let config = load_config_from_toml();
+    let client = ApiClient::new(config).expect("cannot new ApiClient");
+    let node_info = client.get_node_info().await.expect("cannot get node info");
+    info!("{:?}", node_info);
+
+    let user_list = client.get_user_list().await.expect("cannot get user list");
+    info!("{:?}", user_list);
 }

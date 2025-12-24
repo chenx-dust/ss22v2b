@@ -1,4 +1,5 @@
 use anyhow::{Result, anyhow};
+use log::{error, info};
 use reqwest::{Client, Response};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -111,11 +112,6 @@ impl ApiClient {
         Ok(server)
     }
 
-    pub async fn get_server_config(&self) -> Option<ServerConfig> {
-        let config = self.server_config.read().await;
-        config.clone()
-    }
-
     pub async fn get_user_list(&self) -> Result<Vec<UserInfo>> {
         let path = "/api/v1/server/UniProxy/user";
         let url = self.assemble_url(path);
@@ -186,7 +182,7 @@ impl ApiClient {
 
     /// Start the client and run continuously
     pub async fn run(&self) -> Result<()> {
-        println!("Fetching node configuration...");
+        info!("Fetching node configuration...");
         
         // First time fetching node config
         let server_config = self.get_node_info().await?;
@@ -200,7 +196,11 @@ impl ApiClient {
             (60u64, 60u64)
         };
 
-        println!("Pull interval: {}s, Push interval: {}s", pull_interval_secs, push_interval_secs);
+        info!("Pull interval: {}s, Push interval: {}s", pull_interval_secs, push_interval_secs);
+        if let Some(callback) = &self.callback {
+            callback.on_server_config_updated(server_config);
+            callback.on_users_updated(self.get_user_list().await?);
+        }
 
         // Create scheduled tasks
         let pull_task = self.pull_task(pull_interval_secs);
@@ -215,40 +215,41 @@ impl ApiClient {
     /// Periodically pull user list and node configuration
     async fn pull_task(&self, interval_secs: u64) -> Result<()> {
         let mut ticker = interval(Duration::from_secs(interval_secs));
+        ticker.tick().await;
         
         loop {
             ticker.tick().await;
             
-            println!("[Pull] Fetching user list...");
+            info!("[Pull] Fetching user list...");
             match self.get_user_list().await {
                 Ok(users) => {
-                    println!("[Pull] Fetched {} users", users.len());
+                    info!("[Pull] Fetched {} users", users.len());
                     if let Some(callback) = &self.callback {
                         callback.on_users_updated(users);
                     }
                 }
                 Err(e) => {
                     if e.to_string().contains("not modified") {
-                        println!("[Pull] User list not modified");
+                        info!("[Pull] User list not modified");
                     } else {
-                        eprintln!("[Pull] Failed to fetch user list: {}", e);
+                        error!("[Pull] Failed to fetch user list: {}", e);
                     }
                 }
             }
-
-            // Try to update node configuration
+            
+            info!("[Pull] Fetching node info...");
             match self.get_node_info().await {
                 Ok(config) => {
-                    println!("[Pull] Node configuration updated: {:?}", config);
+                    info!("[Pull] Node configuration updated: {:?}", config);
                     if let Some(callback) = &self.callback {
                         callback.on_server_config_updated(config);
                     }
                 }
                 Err(e) => {
                     if e.to_string().contains("not modified") {
-                        println!("[Pull] Node configuration not modified");
+                        info!("[Pull] Node configuration not modified");
                     } else {
-                        eprintln!("[Pull] Failed to fetch node configuration: {}", e);
+                        error!("[Pull] Failed to fetch node configuration: {}", e);
                     }
                 }
             }
@@ -265,24 +266,24 @@ impl ApiClient {
             if let Some(callback) = &self.callback {
                 if let Some(traffic_vec) = callback.get_traffic_data().await {
                     if traffic_vec.is_empty() {
-                        println!("[Push] No traffic data to push");
+                        info!("[Push] No traffic data to push");
                         continue;
                     }
 
-                    println!("[Push] Pushing traffic data for {} users...", traffic_vec.len());
+                    info!("[Push] Pushing traffic data for {} users...", traffic_vec.len());
                     match self.report_user_traffic(&traffic_vec).await {
                         Ok(_) => {
-                            println!("[Push] Traffic data pushed successfully");
+                            info!("[Push] Traffic data pushed successfully");
                         }
                         Err(e) => {
-                            eprintln!("[Push] Failed to push traffic data: {}", e);
+                            error!("[Push] Failed to push traffic data: {}", e);
                         }
                     }
                 } else {
-                    println!("[Push] No traffic data to push");
+                    info!("[Push] No traffic data to push");
                 }
             } else {
-                println!("[Push] No callback registered");
+                info!("[Push] No callback registered");
             }
         }
     }

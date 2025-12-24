@@ -2028,7 +2028,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64",
  "env_logger",
+ "log",
  "reqwest",
  "serde",
  "serde_json",
