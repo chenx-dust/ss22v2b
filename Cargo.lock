@@ -2060,7 +2060,7 @@ dependencies = [
 
 [[package]]
 name = "ss22v2b"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",

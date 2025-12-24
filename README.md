@@ -12,6 +12,7 @@
 - 🚀 **高性能** - 基于 `shadowsocks-service`，支持 Shadowsocks 2022 最新协议
 - 🔧 **灵活配置** - 支持 TCP/UDP、TCP Fast Open、TCP No Delay 等优化选项
 - 📝 **详细日志** - 支持多级日志输出，方便调试和监控
+- 🚇 **中继代理** - 支持通过另一 Shadowsocks 服务器中继代理
 
 ## 🚀 快速开始
 

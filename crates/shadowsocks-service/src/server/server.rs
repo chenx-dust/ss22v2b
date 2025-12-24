@@ -25,6 +25,7 @@ pub struct ServerBuilder {
     udp_capacity: Option<usize>,
     manager_addr: Option<ManagerAddr>,
     accept_opts: AcceptOpts,
+    relay_cfg: Option<ServerConfig>,
 }
 
 impl ServerBuilder {
@@ -42,6 +43,7 @@ impl ServerBuilder {
             udp_capacity: None,
             manager_addr: None,
             accept_opts: AcceptOpts::default(),
+            relay_cfg: None,
         }
     }
 
@@ -53,6 +55,11 @@ impl ServerBuilder {
     /// Get flow statistic reference
     pub fn flow_stat_ref(&self) -> &FlowStat {
         self.context.flow_stat_ref()
+    }
+
+    // Get relay config
+    pub fn relay_config(&self) -> Option<&ServerConfig> {
+        self.relay_cfg.as_ref()
     }
 
     /// Set `ConnectOpts`
@@ -105,6 +112,16 @@ impl ServerBuilder {
         self.context.set_security_config(security)
     }
 
+    // Set relay config
+    pub fn set_relay_config(&mut self, relay_cfg: ServerConfig) {
+        self.relay_cfg = Some(relay_cfg)
+    }
+
+    // Set relay config from URL
+    pub fn set_relay_config_from_url(&mut self, encoded: &str) {
+        self.relay_cfg = Some(ServerConfig::from_url(encoded).expect("invalid shadowsocks url"))
+    }
+
     /// Start the server
     ///
     /// 1. Starts plugin (subprocess)
@@ -123,7 +140,7 @@ impl ServerBuilder {
 
         let mut tcp_server = None;
         if self.svr_cfg.mode().enable_tcp() {
-            let server = TcpServer::new(context.clone(), self.svr_cfg.clone(), self.accept_opts.clone()).await?;
+            let server = TcpServer::new(context.clone(), self.svr_cfg.clone(), self.accept_opts.clone(), self.relay_cfg.clone()).await?;
             tcp_server = Some(server);
         }
 
@@ -135,6 +152,7 @@ impl ServerBuilder {
                 self.udp_expiry_duration,
                 self.udp_capacity,
                 self.accept_opts.clone(),
+                self.relay_cfg.clone(),
             )
             .await?;
             udp_server = Some(server);

@@ -47,9 +47,9 @@ enum ProxyClientStreamReadState {
 /// A stream for sending / receiving data stream from remote server via shadowsocks' proxy server
 #[derive(Debug)]
 #[pin_project]
-pub struct ProxyClientStream<S> {
+pub struct ProxyClientStream {
     #[pin]
-    stream: CryptoStream<S>,
+    stream: CryptoStream<OutboundTcpStream>,
     writer_state: ProxyClientStreamWriteState,
     reader_state: ProxyClientStreamReadState,
     context: SharedContext,
@@ -57,7 +57,7 @@ pub struct ProxyClientStream<S> {
 
 static DEFAULT_CONNECT_OPTS: LazyLock<ConnectOpts> = LazyLock::new(Default::default);
 
-impl ProxyClientStream<OutboundTcpStream> {
+impl ProxyClientStream {
     /// Connect to target `addr` via shadowsocks' server configured by `svr_cfg`
     pub async fn connect<A>(context: SharedContext, svr_cfg: &ServerConfig, addr: A) -> io::Result<Self>
     where
@@ -76,39 +76,33 @@ impl ProxyClientStream<OutboundTcpStream> {
     where
         A: Into<Address>,
     {
-        Self::connect_with_opts_map(context, svr_cfg, addr, opts, |s| s).await
+        Self::connect_with_opts_map(context, svr_cfg, addr, opts).await
     }
 }
 
-impl<S> ProxyClientStream<S>
-where
-    S: AsyncRead + AsyncWrite + Unpin,
+impl ProxyClientStream
 {
-    /// Connect to target `addr` via shadowsocks' server configured by `svr_cfg`, maps `TcpStream` to customized stream with `map_fn`
+    /// Connect to target `addr` via shadowsocks' server configured by `svr_cfg`, maps `OutboundTcpStream` to customized stream with `map_fn`
     pub async fn connect_map<A, F>(
         context: SharedContext,
         svr_cfg: &ServerConfig,
         addr: A,
-        map_fn: F,
     ) -> io::Result<Self>
     where
         A: Into<Address>,
-        F: FnOnce(OutboundTcpStream) -> S,
     {
-        Self::connect_with_opts_map(context, svr_cfg, addr, &DEFAULT_CONNECT_OPTS, map_fn).await
+        Self::connect_with_opts_map(context, svr_cfg, addr, &DEFAULT_CONNECT_OPTS).await
     }
 
-    /// Connect to target `addr` via shadowsocks' server configured by `svr_cfg`, maps `TcpStream` to customized stream with `map_fn`
-    pub async fn connect_with_opts_map<A, F>(
+    /// Connect to target `addr` via shadowsocks' server configured by `svr_cfg`, maps `OutboundTcpStream` to customized stream with `map_fn`
+    pub async fn connect_with_opts_map<A>(
         context: SharedContext,
         svr_cfg: &ServerConfig,
         addr: A,
         opts: &ConnectOpts,
-        map_fn: F,
     ) -> io::Result<Self>
     where
         A: Into<Address>,
-        F: FnOnce(OutboundTcpStream) -> S,
     {
         let stream = match svr_cfg.timeout() {
             Some(d) => {
@@ -138,13 +132,13 @@ where
             opts
         );
 
-        Ok(Self::from_stream(context, map_fn(stream), svr_cfg, addr))
+        Ok(Self::from_stream(context, stream, svr_cfg, addr))
     }
 
     /// Create a `ProxyClientStream` with a connected `stream` to a shadowsocks' server
     ///
     /// NOTE: `stream` must be connected to the server with the same configuration as `svr_cfg`, otherwise strange errors would occurs
-    pub fn from_stream<A>(context: SharedContext, stream: S, svr_cfg: &ServerConfig, addr: A) -> Self
+    pub fn from_stream<A>(context: SharedContext, stream: OutboundTcpStream, svr_cfg: &ServerConfig, addr: A) -> Self
     where
         A: Into<Address>,
     {
@@ -179,24 +173,22 @@ where
     }
 
     /// Get reference to the underlying stream
-    pub fn get_ref(&self) -> &S {
+    pub fn get_ref(&self) -> &OutboundTcpStream {
         self.stream.get_ref()
     }
 
     /// Get mutable reference to the underlying stream
-    pub fn get_mut(&mut self) -> &mut S {
+    pub fn get_mut(&mut self) -> &mut OutboundTcpStream {
         self.stream.get_mut()
     }
 
     /// Consumes the `ProxyClientStream` and return the underlying stream
-    pub fn into_inner(self) -> S {
+    pub fn into_inner(self) -> OutboundTcpStream {
         self.stream.into_inner()
     }
 }
 
-impl<S> AsyncRead for ProxyClientStream<S>
-where
-    S: AsyncRead + AsyncWrite + Unpin,
+impl AsyncRead for ProxyClientStream
 {
     #[inline]
     fn poll_read(self: Pin<&mut Self>, cx: &mut task::Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
@@ -286,9 +278,9 @@ fn make_first_packet_buffer(method: CipherKind, addr: &Address, buf: &[u8]) -> B
     buffer
 }
 
-impl<S> AsyncWrite for ProxyClientStream<S>
+impl AsyncWrite for ProxyClientStream
 where
-    S: AsyncRead + AsyncWrite + Unpin,
+    OutboundTcpStream: AsyncRead + AsyncWrite + Unpin,
 {
     fn poll_write(self: Pin<&mut Self>, cx: &mut task::Context<'_>, buf: &[u8]) -> Poll<Result<usize, io::Error>> {
         let this = self.project();

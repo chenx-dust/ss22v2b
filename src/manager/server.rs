@@ -136,12 +136,16 @@ impl ShadowsocksServerManager {
         accept_opts.tcp.fastopen = self.ss_config.fast_open;
         accept_opts.tcp.nodelay = self.ss_config.no_delay;
         accept_opts.tcp.mptcp = self.ss_config.mptcp;
-
         if let Some(keepalive) = self.ss_config.keep_alive_duration() {
             accept_opts.tcp.keepalive = Some(keepalive);
         }
-
         builder.set_accept_opts(accept_opts);
+
+        if let Some(relay) = self.ss_config.relay.as_ref() {
+            builder.set_relay_config_from_url(&relay);
+            debug!("Relay server: {:?}", builder.relay_config().unwrap())
+        }
+
         let server = builder.build().await?;
 
         // Spawn server in background

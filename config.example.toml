@@ -25,6 +25,17 @@ timeout = 30
 [shadowsocks]
 
 # -----------------------------------------------------------------------------
+# Relay Server (Optional)
+# -----------------------------------------------------------------------------
+
+# Relay Shadowsocks server URL
+# If specified, traffic will be relayed through this server (proxy chaining).
+# Format: ss://method:password@host:port
+# Default: None
+relay = "ss://aes-256-gcm:your-password@example.com:8388"
+
+
+# -----------------------------------------------------------------------------
 # Connection Timeouts
 # -----------------------------------------------------------------------------
 

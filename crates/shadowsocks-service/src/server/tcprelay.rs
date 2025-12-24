@@ -8,15 +8,16 @@ use std::{
     time::Duration,
 };
 
+use futures::FutureExt;
 use log::{debug, error, info, trace, warn};
 use shadowsocks::{
-    ProxyListener, ServerConfig,
+    ProxyClientStream, ProxyListener, ServerConfig,
     crypto::CipherKind,
     net::{AcceptOpts, TcpStream as OutboundTcpStream},
     relay::tcprelay::utils::copy_encrypted_bidirectional,
 };
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream as TokioTcpStream,
     time,
 };
@@ -25,11 +26,16 @@ use crate::net::{MonProxyStream, utils::ignore_until_end};
 
 use super::context::ServiceContext;
 
+pub trait AsyncStream: AsyncRead + AsyncWrite + Unpin + Send {}
+
+impl<S: AsyncRead + AsyncWrite + Unpin + Send> AsyncStream for S {}
+
 /// TCP server instance
 pub struct TcpServer {
     context: Arc<ServiceContext>,
     svr_cfg: ServerConfig,
     listener: ProxyListener,
+    relay_cfg: Option<ServerConfig>,
 }
 
 impl TcpServer {
@@ -37,12 +43,14 @@ impl TcpServer {
         context: Arc<ServiceContext>,
         svr_cfg: ServerConfig,
         accept_opts: AcceptOpts,
+        relay_cfg: Option<ServerConfig>,
     ) -> io::Result<Self> {
         let listener = ProxyListener::bind_with_opts(context.context(), &svr_cfg, accept_opts).await?;
         Ok(Self {
             context,
             svr_cfg,
             listener,
+            relay_cfg,
         })
     }
 
@@ -91,6 +99,7 @@ impl TcpServer {
                 peer_addr,
                 stream: local_stream,
                 timeout: self.svr_cfg.timeout(),
+                relay_cfg: self.relay_cfg.clone(),
             };
 
             tokio::spawn(async move {
@@ -122,6 +131,7 @@ struct TcpServerClient {
     peer_addr: SocketAddr,
     stream: MonProxyStream<TokioTcpStream>,
     timeout: Option<Duration>,
+    relay_cfg: Option<ServerConfig>,
 }
 
 impl TcpServerClient {
@@ -201,11 +211,19 @@ impl TcpServerClient {
 
         let mut remote_stream = match timeout_fut(
             self.timeout,
-            OutboundTcpStream::connect_remote_with_opts(
-                self.context.context_ref(),
-                &target_addr,
-                self.context.connect_opts_ref(),
-            ),
+            match self.relay_cfg.as_ref() {
+                Some(relay_cfg) => ProxyClientStream::connect_with_opts_map(
+                    self.context.context(),
+                    relay_cfg,
+                    &target_addr,
+                    self.context.connect_opts_ref(),
+                ).map(|res| res.map(|s| Box::new(s) as Box<dyn AsyncStream>)).boxed(),
+                None => OutboundTcpStream::connect_remote_with_opts(
+                    self.context.context_ref(),
+                    &target_addr,
+                    self.context.connect_opts_ref(),
+                ).map(|res| res.map(|s| Box::new(s) as Box<dyn AsyncStream>)).boxed(),
+            },
         )
         .await
         {

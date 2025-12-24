@@ -84,6 +84,7 @@ pub struct UdpServer {
     time_to_live: Duration,
     listener: Arc<MonProxySocket<InboundUdpSocket>>,
     svr_cfg: ServerConfig,
+    relay_cfg: Option<ServerConfig>,
 }
 
 impl UdpServer {
@@ -93,6 +94,7 @@ impl UdpServer {
         time_to_live: Option<Duration>,
         capacity: Option<usize>,
         accept_opts: AcceptOpts,
+        relay_cfg: Option<ServerConfig>,
     ) -> io::Result<Self> {
         let time_to_live = time_to_live.unwrap_or(crate::DEFAULT_UDP_EXPIRY_DURATION);
 
@@ -130,6 +132,7 @@ impl UdpServer {
             time_to_live,
             listener,
             svr_cfg,
+            relay_cfg,
         })
     }
 
@@ -328,6 +331,8 @@ impl UdpServer {
                     listener.clone(),
                     peer_addr,
                     self.keepalive_tx.clone(),
+                    self.relay_cfg.clone(),
+                    self.time_to_live,
                 );
 
                 debug!("created udp association for {}", peer_addr);
@@ -357,6 +362,8 @@ impl UdpServer {
                     peer_addr,
                     self.keepalive_tx.clone(),
                     client_session_id,
+                    self.relay_cfg.clone(),
+                    self.time_to_live,
                 );
 
                 debug!(
@@ -392,8 +399,11 @@ impl UdpAssociation {
         inbound: Arc<MonProxySocket<InboundUdpSocket>>,
         peer_addr: SocketAddr,
         keepalive_tx: mpsc::Sender<NatKey>,
+        relay_cfg: Option<ServerConfig>,
+        server_session_expire_duration: Duration,
     ) -> Self {
-        let (assoc_handle, sender) = UdpAssociationContext::create(context, inbound, peer_addr, keepalive_tx, None);
+        let (assoc_handle, sender) =
+            UdpAssociationContext::create(context, inbound, peer_addr, keepalive_tx, None, relay_cfg, server_session_expire_duration);
         Self { assoc_handle, sender }
     }
 
@@ -404,9 +414,11 @@ impl UdpAssociation {
         peer_addr: SocketAddr,
         keepalive_tx: mpsc::Sender<NatKey>,
         client_session_id: u64,
+        relay_cfg: Option<ServerConfig>,
+        server_session_expire_duration: Duration,
     ) -> Self {
         let (assoc_handle, sender) =
-            UdpAssociationContext::create(context, inbound, peer_addr, keepalive_tx, Some(client_session_id));
+            UdpAssociationContext::create(context, inbound, peer_addr, keepalive_tx, Some(client_session_id), relay_cfg, server_session_expire_duration);
         Self { assoc_handle, sender }
     }
 
@@ -435,6 +447,24 @@ impl ClientSessionContext {
     }
 }
 
+#[derive(Debug, Clone)]
+struct ServerContext {
+    packet_window_filter: PacketWindowFilter,
+}
+
+#[derive(Clone)]
+struct ServerSessionContext {
+    server_session_map: LruCache<u64, ServerContext>,
+}
+
+impl ServerSessionContext {
+    fn new(session_expire_duration: Duration) -> Self {
+        Self {
+            server_session_map: LruCache::with_expiry_duration(session_expire_duration),
+        }
+    }
+}
+
 struct UdpAssociationContext {
     context: Arc<ServiceContext>,
     peer_addr: SocketAddr,
@@ -447,6 +477,13 @@ struct UdpAssociationContext {
     client_session: Option<ClientSessionContext>,
     server_session_id: u64,
     server_packet_id: u64,
+    // Relay Server
+    relay_cfg: Option<ServerConfig>,
+    proxied_socket: Option<ProxySocket<OutboundUdpSocket>>,
+    client_session_id: u64,
+    client_packet_id: u64,
+    server_session: Option<ServerSessionContext>,
+    server_session_expire_duration: Duration,
 }
 
 impl Drop for UdpAssociationContext {
@@ -469,6 +506,16 @@ fn generate_server_session_id() -> u64 {
     }
 }
 
+#[inline]
+fn generate_client_session_id() -> u64 {
+    loop {
+        let id = CLIENT_SESSION_RNG.with(|rng| rng.borrow_mut().random());
+        if id != 0 {
+            break id;
+        }
+    }
+}
+
 impl UdpAssociationContext {
     fn create(
         context: Arc<ServiceContext>,
@@ -476,6 +523,8 @@ impl UdpAssociationContext {
         peer_addr: SocketAddr,
         keepalive_tx: mpsc::Sender<NatKey>,
         client_session_id: Option<u64>,
+        relay_cfg: Option<ServerConfig>,
+        server_session_expire_duration: Duration,
     ) -> (JoinHandle<()>, mpsc::Sender<UdpAssociationSendMessage>) {
         // Pending packets UDP_ASSOCIATION_SEND_CHANNEL_SIZE for each association should be good enough for a server.
         // If there are plenty of packets stuck in the channel, dropping excessive packets is a good way to protect the server from
@@ -494,6 +543,14 @@ impl UdpAssociationContext {
             // server_session_id must be generated randomly
             server_session_id: generate_server_session_id(),
             server_packet_id: 0,
+            relay_cfg,
+            proxied_socket: None,
+            // client_session_id must be random generated,
+            // server use this ID to identify every independent clients.
+            client_session_id: generate_client_session_id(),
+            client_packet_id: 0,
+            server_session: None,
+            server_session_expire_duration,
         };
         let handle = tokio::spawn(async move { assoc.dispatch_packet(receiver).await });
 
@@ -503,6 +560,7 @@ impl UdpAssociationContext {
     async fn dispatch_packet(&mut self, mut receiver: mpsc::Receiver<UdpAssociationSendMessage>) {
         let mut outbound_ipv4_buffer = Vec::new();
         let mut outbound_ipv6_buffer = Vec::new();
+        let mut proxied_buffer = Vec::new();
         let mut keepalive_interval = time::interval(Duration::from_secs(1));
 
         loop {
@@ -549,6 +607,49 @@ impl UdpAssociationContext {
                     self.send_received_respond_packet(addr, &outbound_ipv6_buffer[..n]).await;
                 }
 
+                received_opt = receive_from_proxied_opt(&self.proxied_socket, &mut proxied_buffer), if self.proxied_socket.is_some() => {
+                    let (n, addr, control_opt) = match received_opt {
+                        Ok(r) => r,
+                        Err(err) => {
+                            error!("udp relay {} <- ... (proxied) failed, error: {}", self.peer_addr, err);
+                            // Socket failure. Reset for recreation.
+                            self.proxied_socket = None;
+                            continue;
+                        }
+                    };
+
+                    if let Some(control) = control_opt {
+                        // Check if Packet ID is in the window
+
+                        let session = self.server_session.get_or_insert_with(|| {
+                            ServerSessionContext::new(self.server_session_expire_duration)
+                        });
+
+                        let packet_id = control.packet_id;
+                        let session_context = session
+                            .server_session_map
+                            .entry(control.server_session_id)
+                            .or_insert_with(|| {
+                                trace!(
+                                    "udp server with session {} for {} created",
+                                    control.client_session_id,
+                                    self.peer_addr,
+                                );
+
+                                ServerContext {
+                                    packet_window_filter: PacketWindowFilter::new()
+                                }
+                            });
+
+                        if !session_context.packet_window_filter.validate_packet_id(packet_id, u64::MAX) {
+                            error!("udp {} packet_id {} out of window", self.peer_addr, packet_id);
+                            continue;
+                        }
+                    }
+
+                    self.send_received_respond_packet(addr, &proxied_buffer[..n]).await;
+                }
+
                 _ = keepalive_interval.tick() => {
                     if self.keepalive_flag {
                         let nat_key = match self.client_session {
@@ -581,6 +682,23 @@ impl UdpAssociationContext {
                         buf.resize(MAXIMUM_UDP_PAYLOAD_SIZE, 0);
                     }
                     s.recv_from(buf).await
+                }
+            }
+        }
+
+        #[inline]
+        async fn receive_from_proxied_opt(
+            socket: &Option<ProxySocket<OutboundUdpSocket>>,
+            buf: &mut Vec<u8>,
+        ) -> io::Result<(usize, Address, Option<UdpSocketControlData>)> {
+            match *socket {
+                None => future::pending().await,
+                Some(ref s) => {
+                    if buf.is_empty() {
+                        buf.resize(MAXIMUM_UDP_PAYLOAD_SIZE, 0);
+                    }
+                    let (n, addr, _, control) = s.recv_with_ctrl(buf).await?;
+                    Ok((n, addr, control))
                 }
             }
         }
@@ -650,13 +768,16 @@ impl UdpAssociationContext {
     }
 
     async fn dispatch_received_outbound_packet(&mut self, target_addr: &Address, data: &[u8]) -> io::Result<()> {
-        match *target_addr {
-            Address::SocketAddress(sa) => self.send_received_outbound_packet(sa, data).await,
-            Address::DomainNameAddress(ref dname, port) => {
-                lookup_then!(self.context.context_ref(), dname, port, |sa| {
-                    self.send_received_outbound_packet(sa, data).await
-                })
-                .map(|_| ())
+        match self.relay_cfg.as_ref() {
+            Some(_) => self.send_received_outbound_proxied_packet(target_addr, data).await,
+            None => match *target_addr {
+                Address::SocketAddress(sa) => self.send_received_outbound_packet(sa, data).await,
+                Address::DomainNameAddress(ref dname, port) => {
+                    lookup_then!(self.context.context_ref(), dname, port, |sa| {
+                        self.send_received_outbound_packet(sa, data).await
+                    })
+                    .map(|_| ())
+                }
             }
         }
     }
@@ -724,6 +845,67 @@ impl UdpAssociationContext {
             }
             Err(err) => Err(err),
         }
+    }
+
+    async fn send_received_outbound_proxied_packet(&mut self, target_addr: &Address, data: &[u8]) -> io::Result<()> {
+        // Increase Packet ID before send
+        self.client_packet_id = match self.client_packet_id.checked_add(1) {
+            Some(i) => i,
+            None => {
+                // FIXME: client_packet_id overflowed. What's the proper way to handle this?
+                //
+                // Reopen a new session is not perfect, because the remote target will receive packets from a different address.
+                // For most application protocol, like QUIC, it is fine to change client address.
+                //
+                // But it will happen only when a client continuously send 18446744073709551616 packets without renewing the socket.
+
+                let new_session_id = generate_client_session_id();
+
+                warn!(
+                    "{} -> {} (proxied) packet id overflowed. socket reset and session renewed ({} -> {})",
+                    self.peer_addr, target_addr, self.client_session_id, new_session_id
+                );
+
+                self.proxied_socket.take();
+                self.client_packet_id = 1;
+                self.client_session_id = new_session_id;
+
+                self.client_packet_id
+            }
+        };
+
+        let socket = match self.proxied_socket {
+            Some(ref mut socket) => socket,
+            None => {
+                debug_assert!(matches!(self.relay_cfg, Some(_)));
+                let socket =
+                    ProxySocket::connect_with_opts(self.context.context(), self.relay_cfg.as_ref().unwrap(), self.context.connect_opts_ref()).await?;
+
+                self.proxied_socket.insert(socket)
+            }
+        };
+
+        let mut control = UdpSocketControlData::default();
+        control.client_session_id = self.client_session_id;
+        control.packet_id = self.client_packet_id;
+
+        match socket.send_with_ctrl(target_addr, &control, data).await {
+            Ok(..) => return Ok(()),
+            Err(err) => {
+                debug!(
+                    "{} -> {} (proxied) sending {} bytes failed, error: {}",
+                    self.peer_addr,
+                    target_addr,
+                    data.len(),
+                    err
+                );
+
+                // Drop the socket and reconnect to another server.
+                self.proxied_socket = None;
+            }
+        }
+
+        Ok(())
     }
 
     async fn send_received_respond_packet(&mut self, mut addr: Address, data: &[u8]) {

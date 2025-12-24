@@ -27,6 +27,10 @@ impl Config {
 /// Shadowsocks server configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShadowsocksConfig {
+    /// Relay Shadowsocks server URL (e.g., "ss://method:password@host:port")
+    /// If specified, traffic will be relayed through this server
+    pub relay: Option<String>,
+
     /// TCP connection timeout in seconds (default: 300)
     #[serde(default = "default_timeout")]
     pub timeout: u64,
@@ -72,6 +76,7 @@ pub struct ShadowsocksConfig {
 impl Default for ShadowsocksConfig {
     fn default() -> Self {
         Self {
+            relay: None,
             timeout: default_timeout(),
             udp_timeout: default_udp_timeout(),
             no_delay: false,
