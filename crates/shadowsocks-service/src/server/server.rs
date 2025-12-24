@@ -246,11 +246,14 @@ impl Server {
             })));
         }
 
-        if let (Err(err), ..) = future::select_all(vfut).await {
-            error!("servers exited with error: {}", err);
+        // Wait for the first task to finish, then abort and join the rest to ensure full shutdown
+        let (first_res, _idx, mut remaining) = future::select_all(vfut).await;
+
+        for handle in remaining.drain(..) {
+            handle.0.abort();
+            let _ = handle.await;
         }
 
-        let err = io::Error::other("server exited unexpectedly");
-        Err(err)
+        first_res
     }
 }
