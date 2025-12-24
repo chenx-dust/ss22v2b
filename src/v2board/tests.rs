@@ -26,7 +26,7 @@ fn load_config_from_toml() -> ApiConfig {
 }
 
 #[test]
-fn load_config_test() {
+fn test_load_config() {
     let config = load_config_from_toml();
 
     info!("API Host: {}", config.api_host);
@@ -36,7 +36,7 @@ fn load_config_test() {
 }
 
 #[tokio::test]
-async fn get_node_info_test() {
+async fn test_get_node_info() {
     let config = load_config_from_toml();
     let client = ApiClient::new(config).expect("cannot new ApiClient");
     let node_info = client.get_node_info().await.expect("cannot get node info");
@@ -45,7 +45,7 @@ async fn get_node_info_test() {
 }
 
 #[tokio::test]
-async fn get_user_list_test() {
+async fn test_get_user_list() {
     let config = load_config_from_toml();
     let client = ApiClient::new(config).expect("cannot new ApiClient");
     let user_list = client.get_user_list().await.expect("cannot get user list");
@@ -54,7 +54,7 @@ async fn get_user_list_test() {
 }
 
 #[tokio::test]
-async fn combined_test() {
+async fn test_combined() {
     let config = load_config_from_toml();
     let client = ApiClient::new(config).expect("cannot new ApiClient");
     let node_info = client.get_node_info().await.expect("cannot get node info");

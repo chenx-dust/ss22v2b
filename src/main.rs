@@ -1,5 +1,5 @@
 mod v2board;
-mod server;
+mod manager;
 
 use async_trait::async_trait;
 use log::{error, info};
@@ -7,7 +7,7 @@ use std::{collections::HashMap, error::Error, sync::Arc};
 use tokio::sync::RwLock;
 
 use crate::v2board::{ApiClient, ApiConfig, EventCallback, ServerConfig, UserInfo, UserTraffic};
-use crate::server::ShadowsocksServerManager;
+use crate::manager::ShadowsocksServerManager;
 
 /// Example callback implementation
 struct ServerCallback {
