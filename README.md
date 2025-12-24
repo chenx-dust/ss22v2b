@@ -72,6 +72,10 @@ Linux/macOS 使用 systemd：
 # 编译
 cargo build --release
 
+# 复制
+cp target/release/ss22v2b /usr/local/bin/ss22v2b
+cp config.toml /usr/local/etc/ss22v2b/config.toml
+
 # 创建 systemd 服务文件
 sudo nano /etc/systemd/system/ss22v2b.service
 ```
@@ -80,15 +84,15 @@ sudo nano /etc/systemd/system/ss22v2b.service
 
 ```ini
 [Unit]
-Description=SS22V2B Shadowsocks Server
+Description=SS22V2B Server
 After=network.target
 
 [Service]
 Type=simple
 User=nobody
-WorkingDirectory=/opt/ss22v2b
-Environment="RUST_LOG=info"
-ExecStart=/opt/ss22v2b/target/release/ss22v2b
+WorkingDirectory=/usr/local/etc/ss22v2b
+Environment="RUST_LOG=warn"
+ExecStart=/usr/local/bin/ss22v2b
 Restart=always
 RestartSec=10
 

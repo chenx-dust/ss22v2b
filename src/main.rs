@@ -3,12 +3,22 @@ mod manager;
 mod v2board;
 
 use async_trait::async_trait;
+use clap::Parser;
 use log::{debug, error, info};
 use std::{error::Error, sync::Arc};
 
 use crate::config::Config;
 use crate::manager::ShadowsocksServerManager;
 use crate::v2board::{ApiClient, EventCallback, ServerConfig, UserInfo, UserTraffic};
+
+/// Command line arguments
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Path to the configuration file
+    #[arg(short, long, default_value = "config.toml")]
+    config: String,
+}
 
 /// Example callback implementation
 struct ServerCallback {
@@ -57,10 +67,14 @@ impl EventCallback for ServerCallback {
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
+    // Parse command line arguments
+    let args = Args::parse();
+
     info!("Starting Shadowsocks V2Board server...");
+    info!("Loading configuration from: {}", args.config);
 
     // Load configuration
-    let config = Config::load_from_file("config.toml")?;
+    let config = Config::load_from_file(&args.config)?;
     
     debug!("Shadowsocks settings: {:?}", config.shadowsocks);
     
