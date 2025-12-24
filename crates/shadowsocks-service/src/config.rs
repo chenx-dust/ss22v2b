@@ -2105,7 +2105,7 @@ impl Config {
 
                 // Extensible Identity Header, Users
                 if let Some(users) = svr.users {
-                    let mut user_manager = ServerUserManager::new();
+                    let user_manager = ServerUserManager::new();
 
                     for user in users {
                         let user = match ServerUser::with_encoded_key(user.name, &user.password) {

@@ -7,7 +7,7 @@ use std::{
     fmt::{self, Debug, Display},
     net::SocketAddr,
     str::{self, FromStr},
-    sync::Arc,
+    sync::{Arc, RwLock},
     time::Duration,
 };
 
@@ -330,43 +330,50 @@ pub enum ServerUserError {
 /// Server multi-users manager
 #[derive(Clone, Debug)]
 pub struct ServerUserManager {
-    users: HashMap<Bytes, Arc<ServerUser>>,
+    users: Arc<RwLock<HashMap<Bytes, Arc<ServerUser>>>>,
 }
 
 impl ServerUserManager {
     /// Create a new manager
     pub fn new() -> Self {
-        Self { users: HashMap::new() }
+        Self {
+            users: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 
     /// Add a new user
-    pub fn add_user(&mut self, user: ServerUser) {
-        self.users.insert(user.clone_identity_hash(), Arc::new(user));
+    pub fn add_user(&self, user: ServerUser) {
+        let mut users = self.users.write().expect("user manager poisoned");
+        users.insert(user.clone_identity_hash(), Arc::new(user));
     }
 
     /// Get user by hash key
-    pub fn get_user_by_hash(&self, user_hash: &[u8]) -> Option<&ServerUser> {
-        self.users.get(user_hash).map(AsRef::as_ref)
+    pub fn get_user_by_hash(&self, user_hash: &[u8]) -> Option<Arc<ServerUser>> {
+        let users = self.users.read().expect("user manager poisoned");
+        users.get(user_hash).cloned()
     }
 
     /// Get user by hash key cloned
     pub fn clone_user_by_hash(&self, user_hash: &[u8]) -> Option<Arc<ServerUser>> {
-        self.users.get(user_hash).cloned()
+        self.get_user_by_hash(user_hash)
     }
 
     /// Number of users
     pub fn user_count(&self) -> usize {
-        self.users.len()
+        let users = self.users.read().expect("user manager poisoned");
+        users.len()
     }
 
-    /// Iterate users
-    pub fn users_iter(&self) -> impl Iterator<Item = &ServerUser> {
-        self.users.values().map(|v| v.as_ref())
+    /// Iterate users (cloned)
+    pub fn users_iter(&self) -> impl Iterator<Item = Arc<ServerUser>> {
+        let users = self.users.read().expect("user manager poisoned");
+        users.values().cloned().collect::<Vec<_>>().into_iter()
     }
 
     // Clear users
-    pub fn clear_users(&mut self) {
-        self.users.clear();
+    pub fn clear_users(&self) {
+        let mut users = self.users.write().expect("user manager poisoned");
+        users.clear();
     }
 }
 

@@ -16,7 +16,7 @@ pub struct ShadowsocksServerManager {
     server_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
     users: Arc<RwLock<Vec<UserInfo>>>,
     current_config: Arc<RwLock<Option<ServerConfig>>>,
-    user_manager: Arc<RwLock<Arc<ServerUserManager>>>,
+    user_manager: Arc<ServerUserManager>,
 }
 
 impl ShadowsocksServerManager {
@@ -25,12 +25,12 @@ impl ShadowsocksServerManager {
             server_handle: Arc::new(RwLock::new(None)),
             users: Arc::new(RwLock::new(Vec::new())),
             current_config: Arc::new(RwLock::new(None)),
-            user_manager: Arc::new(RwLock::new(Arc::new(ServerUserManager::new()))),
+            user_manager: Arc::new(ServerUserManager::new()),
         }
     }
 
     /// Add users to the given user manager with the specified cipher
-    fn add_users_to_manager(manager: &mut ServerUserManager, users: &[UserInfo], cipher: Option<&str>) {
+    fn add_users_to_manager(manager: &ServerUserManager, users: &[UserInfo], cipher: Option<&str>) {
         let psw_length = if cipher == Some("2022-blake3-aes-128-gcm") {
             16
         } else {
@@ -90,23 +90,12 @@ impl ShadowsocksServerManager {
         // Build user manager from stored users
         let users_guard = self.users.read().await;
 
-        if users_guard.is_empty() {
-            let mut current_config = self.current_config.write().await;
-            *current_config = Some(config);
-            return Ok(());
-        }
-
-        let mut new_manager = ServerUserManager::new();
-        Self::add_users_to_manager(&mut new_manager, &users_guard, config.cipher.as_deref());
+        let manager = self.user_manager.clone();
+        manager.clear_users();
+        Self::add_users_to_manager(&manager, &users_guard, config.cipher.as_deref());
         drop(users_guard);
 
-        let manager = Arc::new(new_manager);
-        // Store the user manager
-        let mut user_manager = self.user_manager.write().await;
-        *user_manager = manager.clone();
-        drop(user_manager);
-
-        ss_config.set_user_manager(manager);
+        ss_config.set_user_manager(manager.clone());
 
         // Build and start server
         let server = ServerBuilder::new(ss_config).build().await?;
@@ -143,10 +132,9 @@ impl ShadowsocksServerManager {
         // Rebuild stored manager only if we have an active config
         let current_config = self.current_config.read().await.clone();
         if let Some(cfg) = current_config {
-            let mut manager = self.user_manager.write().await;
-            let manager_mut = Arc::make_mut(&mut manager);
-            manager_mut.clear_users();
-            Self::add_users_to_manager(manager_mut, &users_list, cfg.cipher.as_deref());
+            let manager = self.user_manager.clone();
+            manager.clear_users();
+            Self::add_users_to_manager(&manager, &users_list, cfg.cipher.as_deref());
         } else {
             debug!("No active config; user manager rebuild skipped");
         }
