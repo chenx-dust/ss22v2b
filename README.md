@@ -84,15 +84,14 @@ sudo nano /etc/systemd/system/ss22v2b.service
 
 ```ini
 [Unit]
-Description=SS22V2B Server
+Description=ss22v2b Server
 After=network.target
 
 [Service]
 Type=simple
 User=nobody
-WorkingDirectory=/usr/local/etc/ss22v2b
 Environment="RUST_LOG=warn"
-ExecStart=/usr/local/bin/ss22v2b
+ExecStart=/usr/local/bin/ss22v2b --config /usr/local/etc/ss22v2b/config.toml
 Restart=always
 RestartSec=10
 

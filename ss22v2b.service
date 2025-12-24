@@ -1,0 +1,14 @@
+[Unit]
+Description=ss22v2b server
+After=network.target
+
+[Service]
+Type=simple
+User=nobody
+Environment="RUST_LOG=warn"
+ExecStart=/usr/local/bin/ss22v2b --config /usr/local/etc/ss22v2b/config.toml
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

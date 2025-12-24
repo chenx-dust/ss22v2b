@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+            bin: ss22v2b
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+            bin: ss22v2b.exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive: tar.gz
+            bin: ss22v2b
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build (release, no tests)
+        run: cargo build --release --locked
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          NAME="ss22v2b-${{ matrix.target }}-${{ github.ref_name }}"
+          mkdir -p "$NAME"
+          cp target/release/${{ matrix.bin }} "$NAME/"
+          cp README.md "$NAME/" 2>/dev/null || true
+          cp LICENSE "$NAME/" 2>/dev/null || true
+          cp config.example.toml "$NAME/" 2>/dev/null || true
+          tar czf "dist/$NAME.tar.gz" "$NAME"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $name = "ss22v2b-${{ matrix.target }}-${{ github.ref_name }}"
+          New-Item -ItemType Directory -Force -Path $name | Out-Null
+          Copy-Item ".\target\release\${{ matrix.bin }}" "$name\"
+          if (Test-Path .\README.md) { Copy-Item .\README.md "$name\" }
+          if (Test-Path .\LICENSE) { Copy-Item .\LICENSE "$name\" }
+          if (Test-Path .\config.example.toml) { Copy-Item .\config.example.toml "$name\" }
+          Compress-Archive -Path "$name\*" -DestinationPath "dist\$name.zip" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+
+  release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: dist/*
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
