@@ -94,3 +94,11 @@ udp_mtu = 1500
 # When enabled, will try IPv6 (AAAA records) before IPv4 (A records)
 # Default: false
 ipv6_first = false
+
+# Shadowsocks server mode
+# Options:
+#   - "tcp_only": Only handle TCP connections
+#   - "udp_only": Only handle UDP packets
+#   - "tcp_and_udp": Handle both TCP and UDP (recommended)
+# Default: "tcp_and_udp"
+mode = "tcp_and_udp"

@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use log::{debug, error, info, warn};
 use shadowsocks_service::server::{ServerBuilder, context::ServiceContext};
-use shadowsocks_service::shadowsocks::config::{Mode, ServerUser, ServerUserManager};
+use shadowsocks_service::shadowsocks::config::{ServerUser, ServerUserManager};
 use shadowsocks_service::shadowsocks::net::AcceptOpts;
 use shadowsocks_service::shadowsocks::{ServerConfig as ShadowsocksConfig, crypto::CipherKind};
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
@@ -107,7 +107,7 @@ impl ShadowsocksServerManager {
 
         // Create shadowsocks config
         let mut ss_config = ShadowsocksConfig::new(listen_addr, server_key.as_str(), cipher)?;
-        ss_config.set_mode(Mode::TcpAndUdp);
+            ss_config.set_mode(self.ss_config.mode.clone());
 
         // Build user manager from stored users
         let users_guard = self.users.read().await;

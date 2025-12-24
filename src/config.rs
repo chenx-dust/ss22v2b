@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use shadowsocks_service::shadowsocks::config::Mode;
 use std::time::Duration;
 
 use crate::v2board::ApiConfig;
@@ -62,6 +63,10 @@ pub struct ShadowsocksConfig {
     /// Maximum Transmission Unit (MTU) size for UDP packets (default: 1500)
     #[serde(default = "default_udp_mtu")]
     pub udp_mtu: usize,
+
+    /// Shadowsocks server mode: "tcp_only", "udp_only", or "tcp_and_udp" (default: "tcp_and_udp")
+    #[serde(default = "default_mode")]
+    pub mode: Mode,
 }
 
 impl Default for ShadowsocksConfig {
@@ -77,6 +82,7 @@ impl Default for ShadowsocksConfig {
             ipv6_first: false,
             udp_max_associations: None,
             udp_mtu: default_udp_mtu(),
+            mode: default_mode(),
         }
     }
 }
@@ -108,4 +114,8 @@ fn default_udp_timeout() -> u64 {
 
 fn default_udp_mtu() -> usize {
     1500
+}
+
+fn default_mode() -> Mode {
+    Mode::TcpAndUdp
 }
