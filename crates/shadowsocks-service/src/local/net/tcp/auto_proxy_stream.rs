@@ -16,10 +16,7 @@ use shadowsocks::{
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use crate::{
-    local::{context::ServiceContext, loadbalancing::ServerIdent},
-    net::MonProxyStream,
-};
+use crate::local::{context::ServiceContext, loadbalancing::ServerIdent};
 
 use super::auto_proxy_io::AutoProxyIo;
 
@@ -27,7 +24,7 @@ use super::auto_proxy_io::AutoProxyIo;
 #[allow(clippy::large_enum_variant)]
 #[pin_project(project = AutoProxyClientStreamProj)]
 pub enum AutoProxyClientStream {
-    Proxied(#[pin] ProxyClientStream<MonProxyStream<TcpStream>>),
+    Proxied(#[pin] ProxyClientStream),
     Bypassed(#[pin] TcpStream),
 }
 
@@ -141,13 +138,11 @@ impl AutoProxyClientStream {
     where
         A: Into<Address>,
     {
-        let flow_stat = context.flow_stat();
         let stream = match ProxyClientStream::connect_with_opts_map(
             context.context(),
             server.server_config(),
             addr,
             connect_opts,
-            |stream| MonProxyStream::from_stream(stream, flow_stat),
         )
         .await
         {
@@ -162,14 +157,14 @@ impl AutoProxyClientStream {
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         match *self {
-            Self::Proxied(ref s) => s.get_ref().get_ref().local_addr(),
+            Self::Proxied(ref s) => s.get_ref().local_addr(),
             Self::Bypassed(ref s) => s.local_addr(),
         }
     }
 
     pub fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
         match *self {
-            Self::Proxied(ref s) => s.get_ref().get_ref().set_nodelay(nodelay),
+            Self::Proxied(ref s) => s.get_ref().set_nodelay(nodelay),
             Self::Bypassed(ref s) => s.set_nodelay(nodelay),
         }
     }
@@ -224,8 +219,8 @@ impl AsyncWrite for AutoProxyClientStream {
     }
 }
 
-impl From<ProxyClientStream<MonProxyStream<TcpStream>>> for AutoProxyClientStream {
-    fn from(s: ProxyClientStream<MonProxyStream<TcpStream>>) -> Self {
+impl From<ProxyClientStream> for AutoProxyClientStream {
+    fn from(s: ProxyClientStream) -> Self {
         Self::Proxied(s)
     }
 }

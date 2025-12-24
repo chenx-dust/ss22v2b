@@ -28,7 +28,7 @@ use shadowsocks::{
 use crate::{
     local::{context::ServiceContext, loadbalancing::PingBalancer},
     net::{
-        MonProxySocket, UDP_ASSOCIATION_KEEP_ALIVE_CHANNEL_SIZE, UDP_ASSOCIATION_SEND_CHANNEL_SIZE,
+        UDP_ASSOCIATION_KEEP_ALIVE_CHANNEL_SIZE, UDP_ASSOCIATION_SEND_CHANNEL_SIZE,
         packet_window::PacketWindowFilter,
     },
 };
@@ -213,7 +213,7 @@ where
     peer_addr: SocketAddr,
     bypassed_ipv4_socket: Option<ShadowUdpSocket>,
     bypassed_ipv6_socket: Option<ShadowUdpSocket>,
-    proxied_socket: Option<MonProxySocket<ShadowUdpSocket>>,
+    proxied_socket: Option<ProxySocket<ShadowUdpSocket>>,
     keepalive_tx: mpsc::Sender<SocketAddr>,
     keepalive_flag: bool,
     balancer: PingBalancer,
@@ -410,7 +410,7 @@ where
 
         #[inline]
         async fn receive_from_proxied_opt(
-            socket: &Option<MonProxySocket<ShadowUdpSocket>>,
+            socket: &Option<ProxySocket<ShadowUdpSocket>>,
             buf: &mut Vec<u8>,
         ) -> io::Result<(usize, Address, Option<UdpSocketControlData>)> {
             match *socket {
@@ -419,7 +419,8 @@ where
                     if buf.is_empty() {
                         buf.resize(MAXIMUM_UDP_PAYLOAD_SIZE, 0);
                     }
-                    s.recv_with_ctrl(buf).await
+                    let (n, addr, _, control) = s.recv_with_ctrl(buf).await?;
+                    Ok((n, addr, control))
                 }
             }
         }
@@ -571,7 +572,6 @@ where
 
                 let socket =
                     ProxySocket::connect_with_opts(self.context.context(), svr_cfg, server.connect_opts_ref()).await?;
-                let socket = MonProxySocket::from_socket(socket, self.context.flow_stat());
 
                 self.proxied_socket.insert(socket)
             }
