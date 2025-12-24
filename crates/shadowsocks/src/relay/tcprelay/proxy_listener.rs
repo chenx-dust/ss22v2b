@@ -73,14 +73,13 @@ impl ProxyListener {
     }
 
     /// Accepts a shadowsocks' client connection and maps the accepted `TcpStream` to another stream type
-    pub async fn accept_map<F, S>(&self, map_fn: F) -> io::Result<(ProxyServerStream<S>, SocketAddr)>
+    pub async fn accept_map<F, S>(&self, map_fn: F) -> io::Result<(S, SocketAddr)>
     where
-        F: FnOnce(TcpStream) -> S,
+        F: FnOnce(ProxyServerStream<TcpStream>) -> S,
         S: AsyncRead + AsyncWrite + Unpin,
     {
         let (stream, peer_addr) = self.listener.accept().await?;
-        let stream = map_fn(stream);
-
+        
         // Create a ProxyServerStream and read the target address from it
         let stream = ProxyServerStream::from_stream_with_user_manager(
             self.context.clone(),
@@ -89,7 +88,8 @@ impl ProxyListener {
             &self.key,
             self.user_manager.clone(),
         );
-
+        
+        let stream = map_fn(stream);
         Ok((stream, peer_addr))
     }
 

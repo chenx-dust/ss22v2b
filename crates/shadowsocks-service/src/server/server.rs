@@ -34,7 +34,7 @@ impl ServerBuilder {
     }
 
     /// Create a new server builder with context
-    fn with_context(context: ServiceContext, svr_cfg: ServerConfig) -> Self {
+    pub fn with_context(context: ServiceContext, svr_cfg: ServerConfig) -> Self {
         Self {
             context,
             svr_cfg,
@@ -221,7 +221,7 @@ impl Server {
                             use shadowsocks::manager::protocol::StatRequest;
 
                             let mut stat = HashMap::new();
-                            let flow = self.context.flow_stat_ref();
+                            let flow = self.context.flow_stat_ref().get_single();
                             stat.insert(self.svr_cfg.addr().port(), flow.tx() + flow.rx());
 
                             let req = StatRequest { stat };

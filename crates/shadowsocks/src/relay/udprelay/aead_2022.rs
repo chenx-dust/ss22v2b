@@ -671,7 +671,7 @@ pub fn decrypt_server_payload_aead_2022(
         client_session_id,
         server_session_id,
         packet_id,
-        user: None,
+        user,
     };
 
     let addr = match Address::read_cursor(&mut cursor) {

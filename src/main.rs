@@ -47,7 +47,7 @@ impl EventCallback for ServerCallback {
     }
 
     async fn get_traffic_data(&self) -> Option<Vec<UserTraffic>> {
-        None
+        self.server_manager.collect_user_traffic().await
     }
 }
 

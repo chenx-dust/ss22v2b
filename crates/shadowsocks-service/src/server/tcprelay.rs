@@ -13,7 +13,7 @@ use shadowsocks::{
     ProxyListener, ServerConfig,
     crypto::CipherKind,
     net::{AcceptOpts, TcpStream as OutboundTcpStream},
-    relay::tcprelay::{ProxyServerStream, utils::copy_encrypted_bidirectional},
+    relay::tcprelay::utils::copy_encrypted_bidirectional,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -120,7 +120,7 @@ struct TcpServerClient {
     context: Arc<ServiceContext>,
     method: CipherKind,
     peer_addr: SocketAddr,
-    stream: ProxyServerStream<MonProxyStream<TokioTcpStream>>,
+    stream: MonProxyStream<TokioTcpStream>,
     timeout: Option<Duration>,
 }
 

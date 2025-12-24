@@ -1,5 +1,9 @@
 //! TCP relay
 
+use std::sync::Arc;
+
+use crate::config::ServerUser;
+
 pub use self::{
     proxy_listener::ProxyListener,
     proxy_stream::{ProxyClientStream, ProxyServerStream},
@@ -23,4 +27,8 @@ pub enum StreamType {
     Client,
     /// Connection initiated from server to client
     Server,
+}
+
+pub trait GetUser {
+    fn user(&self) -> Option<Arc<ServerUser>>;
 }

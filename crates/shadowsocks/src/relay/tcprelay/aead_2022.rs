@@ -65,9 +65,9 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use super::{crypto_io::StreamType, proxy_stream::protocol::v2::SERVER_STREAM_TIMESTAMP_MAX_DIFF};
 use crate::{
-    config::{ServerUserManager, method_support_eih},
+    config::{ServerUser, ServerUserManager, method_support_eih},
     context::Context,
-    crypto::{CipherKind, v2::tcp::TcpCipher},
+    crypto::{CipherKind, v2::tcp::TcpCipher}, relay::tcprelay::GetUser,
 };
 
 #[inline]
@@ -136,8 +136,15 @@ pub struct DecryptedReader {
     request_salt: Option<Bytes>,
     data_chunk_count: u64,
     user_manager: Option<Arc<ServerUserManager>>,
-    user_key: Option<Bytes>,
+    user: Option<Arc<ServerUser>>,
     has_handshaked: bool,
+}
+
+impl GetUser for DecryptedReader {
+    /// Get authenticated user key
+    fn user(&self) -> Option<Arc<ServerUser>> {
+        self.user.clone()
+    }
 }
 
 impl DecryptedReader {
@@ -164,7 +171,7 @@ impl DecryptedReader {
                 request_salt: None,
                 data_chunk_count: 0,
                 user_manager,
-                user_key: None,
+                user: None,
                 has_handshaked: false,
             }
         } else {
@@ -180,7 +187,7 @@ impl DecryptedReader {
                 request_salt: None,
                 data_chunk_count: 0,
                 user_manager,
-                user_key: None,
+                user: None,
                 has_handshaked: false,
             }
         }
@@ -337,7 +344,7 @@ impl DecryptedReader {
                         }
                         Some(user) => {
                             trace!("{:?} chosen by EIH", user);
-                            self.user_key = Some(Bytes::copy_from_slice(user.key()));
+                            self.user = Some(user.clone());
                             TcpCipher::new(self.method, user.key(), salt)
                         }
                     }
@@ -499,11 +506,6 @@ impl DecryptedReader {
             DecryptReadState::BufferedData { pos } => (self.data_chunk_count, self.buffer.len() - pos),
             _ => (self.data_chunk_count, 0),
         }
-    }
-
-    /// Get authenticated user key
-    pub fn user_key(&self) -> Option<&[u8]> {
-        self.user_key.as_deref()
     }
 
     /// Check if handshake finished

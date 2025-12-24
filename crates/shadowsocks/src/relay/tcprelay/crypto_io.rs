@@ -17,9 +17,9 @@ use log::trace;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use crate::{
-    config::ServerUserManager,
+    config::{ServerUser, ServerUserManager},
     context::Context,
-    crypto::{CipherCategory, CipherKind},
+    crypto::{CipherCategory, CipherKind}, relay::tcprelay::GetUser,
 };
 
 #[cfg(feature = "aead-cipher")]
@@ -81,6 +81,21 @@ pub enum DecryptedReader {
     Stream(StreamDecryptedReader),
     #[cfg(feature = "aead-cipher-2022")]
     Aead2022(Aead2022DecryptedReader),
+}
+
+impl GetUser for DecryptedReader {
+    /// Get authenticated user key (AEAD2022)
+    fn user(&self) -> Option<Arc<ServerUser>> {
+        match *self {
+            #[cfg(feature = "stream-cipher")]
+            Self::Stream(..) => None,
+            #[cfg(feature = "aead-cipher")]
+            Self::Aead(..) => None,
+            Self::None => None,
+            #[cfg(feature = "aead-cipher-2022")]
+            Self::Aead2022(ref reader) => reader.user(),
+        }
+    }
 }
 
 impl DecryptedReader {
@@ -170,19 +185,6 @@ impl DecryptedReader {
             Self::None => None,
             #[cfg(feature = "aead-cipher-2022")]
             Self::Aead2022(ref reader) => reader.request_salt(),
-        }
-    }
-
-    /// Get authenticated user key (AEAD2022)
-    pub fn user_key(&self) -> Option<&[u8]> {
-        match *self {
-            #[cfg(feature = "stream-cipher")]
-            Self::Stream(..) => None,
-            #[cfg(feature = "aead-cipher")]
-            Self::Aead(..) => None,
-            Self::None => None,
-            #[cfg(feature = "aead-cipher-2022")]
-            Self::Aead2022(ref reader) => reader.user_key(),
         }
     }
 
@@ -342,6 +344,12 @@ impl<S> fmt::Debug for CryptoStream<S> {
             .field("method", &self.method)
             .field("has_handshaked", &self.has_handshaked)
             .finish()
+    }
+}
+
+impl<S> GetUser for CryptoStream<S> {
+    fn user(&self) -> Option<Arc<ServerUser>> {
+        self.dec.user()
     }
 }
 
@@ -544,8 +552,8 @@ where
             *has_handshaked = true;
 
             // Reset writer cipher with authenticated user key
-            if let Some(user_key) = dec.user_key() {
-                enc.reset_cipher_with_key(user_key);
+            if let Some(user) = dec.user() {
+                enc.reset_cipher_with_key(user.key());
             }
         }
 

@@ -13,14 +13,13 @@ use pin_project::pin_project;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use crate::{
-    config::ServerUserManager,
+    config::{ServerUser, ServerUserManager},
     context::SharedContext,
     crypto::CipherKind,
     relay::{
         socks5::Address,
         tcprelay::{
-            crypto_io::{CryptoRead, CryptoStream, CryptoWrite, StreamType},
-            proxy_stream::protocol::TcpRequestHeader,
+            GetUser, crypto_io::{CryptoRead, CryptoStream, CryptoWrite, StreamType}, proxy_stream::protocol::TcpRequestHeader
         },
     },
 };
@@ -41,6 +40,13 @@ pub struct ProxyServerStream<S> {
     context: SharedContext,
     writer_state: ProxyServerStreamWriteState,
     has_handshaked: bool,
+}
+
+impl<S> GetUser for ProxyServerStream<S> {
+    /// Get authenticated user key
+    fn user(&self) -> Option<Arc<ServerUser>> {
+        self.stream.user()
+    }
 }
 
 impl<S> ProxyServerStream<S> {

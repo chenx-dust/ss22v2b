@@ -45,7 +45,7 @@ where
     #[inline]
     pub async fn send(&self, addr: &Address, payload: &[u8]) -> io::Result<()> {
         let n = self.socket.send(addr, payload).await?;
-        self.flow_stat.incr_tx(n as u64);
+        self.flow_stat.incr_tx(n as u64, None);
 
         Ok(())
     }
@@ -59,7 +59,7 @@ where
         payload: &[u8],
     ) -> io::Result<()> {
         let n = self.socket.send_with_ctrl(addr, control, payload).await?;
-        self.flow_stat.incr_tx(n as u64);
+        self.flow_stat.incr_tx(n as u64, control.user.as_deref());
 
         Ok(())
     }
@@ -68,7 +68,7 @@ where
     #[inline]
     pub async fn send_to(&self, target: SocketAddr, addr: &Address, payload: &[u8]) -> io::Result<()> {
         let n = self.socket.send_to(target, addr, payload).await?;
-        self.flow_stat.incr_tx(n as u64);
+        self.flow_stat.incr_tx(n as u64, None);
 
         Ok(())
     }
@@ -83,7 +83,7 @@ where
         payload: &[u8],
     ) -> io::Result<()> {
         let n = self.socket.send_to_with_ctrl(target, addr, control, payload).await?;
-        self.flow_stat.incr_tx(n as u64);
+        self.flow_stat.incr_tx(n as u64, control.user.as_deref());
 
         Ok(())
     }
@@ -101,7 +101,7 @@ where
     #[inline]
     pub async fn recv(&self, recv_buf: &mut [u8]) -> io::Result<(usize, Address)> {
         let (n, addr, recv_n) = self.socket.recv(recv_buf).await?;
-        self.flow_stat.incr_rx(recv_n as u64);
+        self.flow_stat.incr_rx(recv_n as u64, None);
 
         Ok((n, addr))
     }
@@ -117,7 +117,7 @@ where
         recv_buf: &mut [u8],
     ) -> io::Result<(usize, Address, Option<UdpSocketControlData>)> {
         let (n, addr, recv_n, control) = self.socket.recv_with_ctrl(recv_buf).await?;
-        self.flow_stat.incr_rx(recv_n as u64);
+        self.flow_stat.incr_rx(recv_n as u64, control.as_ref().and_then(|o| o.user.as_deref()));
 
         Ok((n, addr, control))
     }
@@ -130,7 +130,7 @@ where
     #[inline]
     pub async fn recv_from(&self, recv_buf: &mut [u8]) -> io::Result<(usize, SocketAddr, Address)> {
         let (n, peer_addr, addr, recv_n) = self.socket.recv_from(recv_buf).await?;
-        self.flow_stat.incr_rx(recv_n as u64);
+        self.flow_stat.incr_rx(recv_n as u64, None);
 
         Ok((n, peer_addr, addr))
     }
@@ -146,7 +146,7 @@ where
         recv_buf: &mut [u8],
     ) -> io::Result<(usize, SocketAddr, Address, Option<UdpSocketControlData>)> {
         let (n, peer_addr, addr, recv_n, control) = self.socket.recv_from_with_ctrl(recv_buf).await?;
-        self.flow_stat.incr_rx(recv_n as u64);
+        self.flow_stat.incr_rx(recv_n as u64, control.as_ref().and_then(|o| o.user.as_deref()));
 
         Ok((n, peer_addr, addr, control))
     }

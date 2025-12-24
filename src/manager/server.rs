@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
-use log::{debug, error, info};
-use shadowsocks_service::server::ServerBuilder;
+use log::{debug, error, info, warn};
+use shadowsocks_service::server::{ServerBuilder, context::ServiceContext};
 use shadowsocks_service::shadowsocks::config::{Mode, ServerUser, ServerUserManager};
 use shadowsocks_service::shadowsocks::net::AcceptOpts;
 use shadowsocks_service::shadowsocks::{ServerConfig as ShadowsocksConfig, crypto::CipherKind};
@@ -18,6 +18,7 @@ pub struct ShadowsocksServerManager {
     pub(super) users: Arc<RwLock<Vec<UserInfo>>>,
     pub(super) current_config: Arc<RwLock<Option<ServerConfig>>>,
     pub(super) user_manager: Arc<ServerUserManager>,
+    pub(super) context: ServiceContext,
 }
 
 impl ShadowsocksServerManager {
@@ -27,6 +28,7 @@ impl ShadowsocksServerManager {
             users: Arc::new(RwLock::new(Vec::new())),
             current_config: Arc::new(RwLock::new(None)),
             user_manager: Arc::new(ServerUserManager::new()),
+            context: ServiceContext::new(),
         }
     }
 
@@ -40,7 +42,7 @@ impl ShadowsocksServerManager {
         debug!("Using password length: {}", psw_length);
         for user in users.iter() {
             // UUID is used as both the user name and key for Shadowsocks 2022
-            manager.add_user(ServerUser::new(&user.uuid, user.uuid.as_bytes()[..psw_length].to_vec()));
+            manager.add_user(ServerUser::new(user.id.to_string(), user.uuid.as_bytes()[..psw_length].to_vec()));
             debug!("Added user {} with UUID {}", user.id, user.uuid);
         }
     }
@@ -104,7 +106,7 @@ impl ShadowsocksServerManager {
         ss_config.set_user_manager(manager.clone());
 
         // Build and start server
-        let mut builder = ServerBuilder::new(ss_config);
+        let mut builder = ServerBuilder::with_context(self.context.clone(), ss_config);
         let mut accept_opts = AcceptOpts::default();
         accept_opts.tcp.fastopen = true;
         accept_opts.tcp.nodelay = true;
@@ -149,5 +151,29 @@ impl ShadowsocksServerManager {
         } else {
             debug!("No active config; user manager rebuild skipped");
         }
+    }
+
+    /// Retrieve per-user traffic since last call
+    pub async fn collect_user_traffic(&self) -> Option<Vec<crate::v2board::UserTraffic>> {
+        let mut result = Vec::new();
+        let flow_map = self.context.flow_stat().get_multiple();
+        for (hash, stat) in flow_map {
+            if let Some(user) = self.user_manager.get_user_by_hash(&hash) {
+                if let Ok(id) = user.name().parse::<i32>() {
+                    let upload = stat.rx() as i64;
+                    let download = stat.tx() as i64;
+                    result.push(crate::v2board::UserTraffic {
+                        id,
+                        upload,
+                        download,
+                    });
+                    debug!("Traffic from user {} with TX: {} RX: {}", id, download, upload);
+                } else {
+                    warn!("Cannot parse id: {}", user.name());
+                }
+            }
+        }
+
+        Some(result)
     }
 }
