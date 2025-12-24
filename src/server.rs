@@ -1,5 +1,4 @@
 use anyhow::{Result, anyhow};
-use base64::Engine;
 use log::{debug, error, info};
 use shadowsocks_service::server::ServerBuilder;
 use shadowsocks_service::shadowsocks::config::{Mode, ServerUser, ServerUserManager};
@@ -17,6 +16,7 @@ pub struct ShadowsocksServerManager {
     server_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
     users: Arc<RwLock<Vec<UserInfo>>>,
     current_config: Arc<RwLock<Option<ServerConfig>>>,
+    user_manager: Arc<RwLock<Arc<ServerUserManager>>>,
 }
 
 impl ShadowsocksServerManager {
@@ -25,6 +25,22 @@ impl ShadowsocksServerManager {
             server_handle: Arc::new(RwLock::new(None)),
             users: Arc::new(RwLock::new(Vec::new())),
             current_config: Arc::new(RwLock::new(None)),
+            user_manager: Arc::new(RwLock::new(Arc::new(ServerUserManager::new()))),
+        }
+    }
+
+    /// Add users to the given user manager with the specified cipher
+    fn add_users_to_manager(manager: &mut ServerUserManager, users: &[UserInfo], cipher: Option<&str>) {
+        let psw_length = if cipher == Some("2022-blake3-aes-128-gcm") {
+            16
+        } else {
+            32
+        };
+        debug!("Using password length: {}", psw_length);
+        for user in users.iter() {
+            // UUID is used as both the user name and key for Shadowsocks 2022
+            manager.add_user(ServerUser::new(&user.uuid, user.uuid.as_bytes()[..psw_length].to_vec()));
+            debug!("Added user {} with UUID {}", user.id, user.uuid);
         }
     }
 
@@ -73,7 +89,6 @@ impl ShadowsocksServerManager {
 
         // Build user manager from stored users
         let users_guard = self.users.read().await;
-        let mut new_manager = ServerUserManager::new();
 
         if users_guard.is_empty() {
             let mut current_config = self.current_config.write().await;
@@ -81,28 +96,17 @@ impl ShadowsocksServerManager {
             return Ok(());
         }
 
-        // Add all stored users to the manager
-        let psw_length = if config.cipher.as_deref() == Some("2022-blake3-aes-128-gcm") {
-            16
-        } else {
-            32
-        };
-        debug!("Using password length: {}", psw_length);
-        const USER_KEY_BASE64_ENGINE: base64::engine::GeneralPurpose = base64::engine::GeneralPurpose::new(
-            &base64::alphabet::STANDARD,
-            base64::engine::GeneralPurposeConfig::new()
-                .with_encode_padding(true)
-                .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
-        );
-        for user in users_guard.iter() {
-            // UUID is used as both the user name and key for Shadowsocks 2022
-            let encoded_psw = USER_KEY_BASE64_ENGINE.encode(user.uuid.as_bytes()[..psw_length].to_vec());
-            new_manager.add_user(ServerUser::with_encoded_key(&user.uuid, encoded_psw.as_str())?);
-            debug!("Added user {} with UUID {} => {}", user.id, user.uuid, encoded_psw);
-        }
+        let mut new_manager = ServerUserManager::new();
+        Self::add_users_to_manager(&mut new_manager, &users_guard, config.cipher.as_deref());
         drop(users_guard);
 
-        ss_config.set_user_manager(new_manager);
+        let manager = Arc::new(new_manager);
+        // Store the user manager
+        let mut user_manager = self.user_manager.write().await;
+        *user_manager = manager.clone();
+        drop(user_manager);
+
+        ss_config.set_user_manager(manager);
 
         // Build and start server
         let server = ServerBuilder::new(ss_config).build().await?;
@@ -130,20 +134,21 @@ impl ShadowsocksServerManager {
     /// Note: Since ServerUserManager cannot be modified after the server starts,
     /// we need to restart the server with updated users
     pub async fn update_users(&self, users: Vec<UserInfo>) {
-        let current_config = self.current_config.read().await;
-        if let Some(config) = current_config.clone() {
-            drop(current_config);
-            info!("Updating {} users in Shadowsocks server", users.len());
+        info!("Updating {} users in Shadowsocks server", users.len());
 
-            // Store the new users list
-            let mut users_list = self.users.write().await;
-            *users_list = users;
-            drop(users_list);
+        // Update stored users
+        let mut users_list = self.users.write().await;
+        *users_list = users;
 
-            info!("User update completed, restarting server to apply user changes");
-            if let Err(e) = self.start_server(config).await {
-                error!("Failed to restart server after user update: {}", e);
-            }
+        // Rebuild stored manager only if we have an active config
+        let current_config = self.current_config.read().await.clone();
+        if let Some(cfg) = current_config {
+            let mut manager = self.user_manager.write().await;
+            let manager_mut = Arc::make_mut(&mut manager);
+            manager_mut.clear_users();
+            Self::add_users_to_manager(manager_mut, &users_list, cfg.cipher.as_deref());
+        } else {
+            debug!("No active config; user manager rebuild skipped");
         }
     }
 }

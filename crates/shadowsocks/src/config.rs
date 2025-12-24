@@ -363,6 +363,11 @@ impl ServerUserManager {
     pub fn users_iter(&self) -> impl Iterator<Item = &ServerUser> {
         self.users.values().map(|v| v.as_ref())
     }
+
+    // Clear users
+    pub fn clear_users(&mut self) {
+        self.users.clear();
+    }
 }
 
 impl Default for ServerUserManager {
@@ -659,8 +664,8 @@ impl ServerConfig {
     }
 
     /// Set user manager, enable Server's multi-user support with EIH
-    pub fn set_user_manager(&mut self, user_manager: ServerUserManager) {
-        self.user_manager = Some(Arc::new(user_manager));
+    pub fn set_user_manager(&mut self, user_manager: Arc<ServerUserManager>) {
+        self.user_manager = Some(user_manager);
     }
 
     /// Get user manager (Server)
