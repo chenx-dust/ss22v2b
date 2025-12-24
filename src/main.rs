@@ -1,12 +1,14 @@
+mod config;
 mod manager;
 mod v2board;
 
 use async_trait::async_trait;
-use log::{error, info};
+use log::{debug, error, info};
 use std::{error::Error, sync::Arc};
 
+use crate::config::Config;
 use crate::manager::ShadowsocksServerManager;
-use crate::v2board::{ApiClient, ApiConfig, EventCallback, ServerConfig, UserInfo, UserTraffic};
+use crate::v2board::{ApiClient, EventCallback, ServerConfig, UserInfo, UserTraffic};
 
 /// Example callback implementation
 struct ServerCallback {
@@ -58,12 +60,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("Starting Shadowsocks V2Board server...");
 
     // Load configuration
-    let config_str = std::fs::read_to_string("config.toml")?;
-    let api_config: ApiConfig = toml::from_str(&config_str)?;
-    let mut api_client = ApiClient::new(api_config)?;
+    let config = Config::load_from_file("config.toml")?;
+    
+    debug!("Shadowsocks settings: {:?}", config.shadowsocks);
+    
+    // Create API client
+    let mut api_client = ApiClient::new(config.api.clone())?;
 
-    // Create server manager
-    let server_manager = Arc::new(ShadowsocksServerManager::new());
+    // Create server manager with shadowsocks config
+    let server_manager = Arc::new(ShadowsocksServerManager::new(config.shadowsocks.clone()));
 
     // Register callback
     let callback = Arc::new(ServerCallback::new(server_manager.clone()));

@@ -1,0 +1,96 @@
+# V2Board Shadowsocks Server Configuration Example
+# Copy this file to config.toml and modify as needed
+
+# =============================================================================
+# V2Board API Settings
+# =============================================================================
+
+# V2Board panel URL
+api_host = "https://your-v2board-panel.com"
+
+# Node ID from V2Board panel
+node_id = 1
+
+# API communication key from V2Board panel
+key = "your-api-key-here"
+
+# API request timeout in seconds
+timeout = 30
+
+
+# =============================================================================
+# Shadowsocks Server Settings
+# =============================================================================
+
+[shadowsocks]
+
+# -----------------------------------------------------------------------------
+# Connection Timeouts
+# -----------------------------------------------------------------------------
+
+# TCP connection timeout in seconds
+# How long to wait before timing out a TCP connection
+# Default: 300 (5 minutes)
+timeout = 300
+
+# UDP association timeout in seconds
+# How long to keep a UDP association alive without activity
+# Default: 300 (5 minutes)
+udp_timeout = 300
+
+
+# -----------------------------------------------------------------------------
+# TCP Optimizations
+# -----------------------------------------------------------------------------
+
+# Enable TCP_NODELAY socket option
+# Disables Nagle's algorithm to reduce latency at the cost of more packets
+# Recommended: true for low-latency applications (gaming, video calls)
+# Default: false
+no_delay = true
+
+# Enable TCP_FASTOPEN socket option
+# Reduces connection establishment latency by allowing data in SYN packets
+# Requires kernel support: Linux 3.7+, Windows 10+, macOS 10.11+
+# Default: false
+fast_open = false
+
+# TCP Keep-Alive duration in seconds
+# Sends keep-alive probes to detect dead connections
+# Uncomment to enable (system default is used if not set)
+# keep_alive = 60
+
+# Enable Multipath TCP (MPTCP)
+# Allows using multiple network paths simultaneously
+# Requires kernel support and proper network configuration
+# Default: false
+mptcp = false
+
+
+# -----------------------------------------------------------------------------
+# UDP Settings
+# -----------------------------------------------------------------------------
+
+# Maximum number of concurrent UDP associations per user
+# Limits memory usage and prevents resource exhaustion
+# Uncomment to set a limit (unlimited by default)
+# udp_max_associations = 512
+
+# Maximum Transmission Unit (MTU) for UDP packets in bytes
+# Includes IP header + UDP header + UDP payload
+# Common values:
+#   - 1500: Standard Ethernet MTU
+#   - 1420: PPPoE connections
+#   - 1280: Minimum IPv6 MTU
+# Default: 1500
+udp_mtu = 1500
+
+
+# -----------------------------------------------------------------------------
+# Network Settings
+# -----------------------------------------------------------------------------
+
+# Prefer IPv6 addresses when resolving hostnames
+# When enabled, will try IPv6 (AAAA records) before IPv4 (A records)
+# Default: false
+ipv6_first = false

@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
+use crate::config::ShadowsocksConfig as AppShadowsocksConfig;
 use crate::v2board::{ServerConfig, UserInfo};
 
 /// Manages the Shadowsocks server lifecycle
@@ -19,21 +20,31 @@ pub struct ShadowsocksServerManager {
     pub(super) current_config: Arc<RwLock<Option<ServerConfig>>>,
     pub(super) user_manager: Arc<ServerUserManager>,
     pub(super) context: ServiceContext,
+    pub(super) ss_config: Arc<AppShadowsocksConfig>,
 }
 
 impl ShadowsocksServerManager {
-    pub fn new() -> Self {
+    pub fn new(ss_config: AppShadowsocksConfig) -> Self {
+        let mut context = ServiceContext::new();
+        // Apply IPv6 first setting
+        context.set_ipv6_first(ss_config.ipv6_first);
+
         Self {
             server_handle: Arc::new(RwLock::new(None)),
             users: Arc::new(RwLock::new(Vec::new())),
             current_config: Arc::new(RwLock::new(None)),
             user_manager: Arc::new(ServerUserManager::new()),
             context: ServiceContext::new(),
+            ss_config: Arc::new(ss_config),
         }
     }
 
     /// Add users to the given user manager with the specified cipher
-    pub(crate) fn add_users_to_manager(manager: &ServerUserManager, users: &[UserInfo], cipher: Option<&str>) {
+    pub(crate) fn add_users_to_manager(
+        manager: &ServerUserManager,
+        users: &[UserInfo],
+        cipher: Option<&str>,
+    ) {
         let psw_length = if cipher == Some("2022-blake3-aes-128-gcm") {
             16
         } else {
@@ -42,7 +53,10 @@ impl ShadowsocksServerManager {
         debug!("Using password length: {}", psw_length);
         for user in users.iter() {
             // UUID is used as both the user name and key for Shadowsocks 2022
-            manager.add_user(ServerUser::new(user.id.to_string(), user.uuid.as_bytes()[..psw_length].to_vec()));
+            manager.add_user(ServerUser::new(
+                user.id.to_string(),
+                user.uuid.as_bytes()[..psw_length].to_vec(),
+            ));
             debug!("Added user {} with UUID {}", user.id, user.uuid);
         }
     }
@@ -105,11 +119,28 @@ impl ShadowsocksServerManager {
 
         ss_config.set_user_manager(manager.clone());
 
+        // Apply timeout settings
+        ss_config.set_timeout(self.ss_config.timeout_duration());
+
         // Build and start server
         let mut builder = ServerBuilder::with_context(self.context.clone(), ss_config);
+
+        // Apply UDP timeout and capacity settings
+        builder.set_udp_expiry_duration(self.ss_config.udp_timeout_duration());
+        if let Some(capacity) = self.ss_config.udp_max_associations {
+            builder.set_udp_capacity(capacity);
+        }
+
+        // Apply TCP/UDP socket options
         let mut accept_opts = AcceptOpts::default();
-        accept_opts.tcp.fastopen = true;
-        accept_opts.tcp.nodelay = true;
+        accept_opts.tcp.fastopen = self.ss_config.fast_open;
+        accept_opts.tcp.nodelay = self.ss_config.no_delay;
+        accept_opts.tcp.mptcp = self.ss_config.mptcp;
+
+        if let Some(keepalive) = self.ss_config.keep_alive_duration() {
+            accept_opts.tcp.keepalive = Some(keepalive);
+        }
+
         builder.set_accept_opts(accept_opts);
         let server = builder.build().await?;
 
@@ -167,7 +198,10 @@ impl ShadowsocksServerManager {
                         upload,
                         download,
                     });
-                    debug!("Traffic from user {} with TX: {} RX: {}", id, download, upload);
+                    debug!(
+                        "Traffic from user {} with TX: {} RX: {}",
+                        id, download, upload
+                    );
                 } else {
                     warn!("Cannot parse id: {}", user.name());
                 }

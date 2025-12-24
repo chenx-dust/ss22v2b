@@ -1,5 +1,6 @@
 use super::server::ShadowsocksServerManager;
 use crate::v2board::{ServerConfig, UserInfo};
+use crate::config::ShadowsocksConfig;
 use shadowsocks_service::shadowsocks::config::ServerUserManager;
 
 fn make_users(n: usize) -> Vec<UserInfo> {
@@ -10,6 +11,10 @@ fn make_users(n: usize) -> Vec<UserInfo> {
             uuid: format!("{}-aaaaaaaa-aaaaaaaa-aaaaaaaa-aaaaaaaa", i),
         })
         .collect()
+}
+
+fn default_ss_config() -> ShadowsocksConfig {
+    ShadowsocksConfig::default()
 }
 
 #[tokio::test]
@@ -42,7 +47,7 @@ async fn test_add_users_password_length_32_for_other_ciphers() {
 
 #[tokio::test]
 async fn test_update_users_without_active_config_does_not_touch_manager() {
-    let mgr = ShadowsocksServerManager::new();
+    let mgr = ShadowsocksServerManager::new(default_ss_config());
     // Ensure manager starts empty
     assert_eq!(mgr.user_manager.user_count(), 0);
 
@@ -55,7 +60,7 @@ async fn test_update_users_without_active_config_does_not_touch_manager() {
 
 #[tokio::test]
 async fn test_update_users_with_active_config_rebuilds_manager() {
-    let mgr = ShadowsocksServerManager::new();
+    let mgr = ShadowsocksServerManager::new(default_ss_config());
 
     // Seed current_config to simulate an active server configuration
     {
@@ -85,7 +90,7 @@ async fn test_update_users_with_active_config_rebuilds_manager() {
 
 #[tokio::test]
 async fn test_start_server_initializes_handle_and_user_manager() {
-    let mgr = ShadowsocksServerManager::new();
+    let mgr = ShadowsocksServerManager::new(default_ss_config());
 
     // Preload users before starting the server
     {
@@ -126,7 +131,7 @@ async fn test_start_server_initializes_handle_and_user_manager() {
 
 #[tokio::test]
 async fn test_start_server_invalid_cipher_returns_error_and_no_handle() {
-    let mgr = ShadowsocksServerManager::new();
+    let mgr = ShadowsocksServerManager::new(default_ss_config());
 
     let cfg = ServerConfig {
         server_port: 0,
@@ -145,7 +150,7 @@ async fn test_start_server_invalid_cipher_returns_error_and_no_handle() {
 
 #[tokio::test]
 async fn test_update_users_while_server_running() {
-    let mgr = ShadowsocksServerManager::new();
+    let mgr = ShadowsocksServerManager::new(default_ss_config());
 
     // Seed initial users
     {
@@ -181,7 +186,7 @@ async fn test_update_users_while_server_running() {
 
 #[tokio::test]
 async fn test_restart_server_with_new_config() {
-    let mgr = ShadowsocksServerManager::new();
+    let mgr = ShadowsocksServerManager::new(default_ss_config());
 
     // First start with 128-bit cipher and two users
     {
