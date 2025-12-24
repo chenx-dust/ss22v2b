@@ -1860,8 +1860,6 @@ dependencies = [
 [[package]]
 name = "shadowsocks"
 version = "1.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "482831bf9d55acf3c98e211b6c852c3dfdf1d1b0d23fdf1d887c5a4b2acad4e4"
 dependencies = [
  "aes",
  "arc-swap",
@@ -1918,8 +1916,6 @@ dependencies = [
 [[package]]
 name = "shadowsocks-service"
 version = "1.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb1238d0380a270803633696b439172a600a1b680e930d8d7fe4fc63068c60c7"
 dependencies = [
  "arc-swap",
  "byte_string",
@@ -2030,6 +2026,7 @@ dependencies = [
  "async-trait",
  "base64",
  "env_logger",
+ "futures",
  "log",
  "reqwest",
  "serde",
