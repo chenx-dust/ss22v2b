@@ -2,6 +2,7 @@ use anyhow::{Result, anyhow};
 use log::{debug, error, info};
 use shadowsocks_service::server::ServerBuilder;
 use shadowsocks_service::shadowsocks::config::{Mode, ServerUser, ServerUserManager};
+use shadowsocks_service::shadowsocks::net::AcceptOpts;
 use shadowsocks_service::shadowsocks::{ServerConfig as ShadowsocksConfig, crypto::CipherKind};
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::str::FromStr;
@@ -103,7 +104,12 @@ impl ShadowsocksServerManager {
         ss_config.set_user_manager(manager.clone());
 
         // Build and start server
-        let server = ServerBuilder::new(ss_config).build().await?;
+        let mut builder = ServerBuilder::new(ss_config);
+        let mut accept_opts = AcceptOpts::default();
+        accept_opts.tcp.fastopen = true;
+        accept_opts.tcp.nodelay = true;
+        builder.set_accept_opts(accept_opts);
+        let server = builder.build().await?;
 
         // Spawn server in background
         let handle = tokio::spawn(async move {
