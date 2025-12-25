@@ -2,6 +2,8 @@
 name = "ss22v2b"
 version = "0.2.0"
 edition = "2024"
+authors = ["Chenx Dust"]
+repository = "https://github.com/chenx-dust/ss22v2b"
 
 [dependencies]
 anyhow = "1.0.100"
