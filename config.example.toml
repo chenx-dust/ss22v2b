@@ -113,3 +113,22 @@ ipv6_first = false
 #   - "tcp_and_udp": Handle both TCP and UDP (recommended)
 # Default: "tcp_and_udp"
 mode = "tcp_and_udp"
+
+
+# -----------------------------------------------------------------------------
+# AEAD 2022 Protocol Settings
+# -----------------------------------------------------------------------------
+
+# AEAD 2022 timestamp tolerance in seconds
+# Maximum allowed time difference between client and server timestamps
+# Helps prevent replay attacks while allowing for clock skew
+# Higher values are more tolerant but less secure
+# Zero will disable this feature
+# Default: 30
+timestamp_limit = 30
+
+# AEAD 2022 comply with incoming timestamp
+# When enabled, server adjusts its timestamp validation based on client's timestamp
+# This can help with clients that have significantly different system clocks
+# Default: false
+comply_with_incoming = false

@@ -28,6 +28,8 @@ impl ShadowsocksServerManager {
         let mut context = ServiceContext::new();
         // Apply IPv6 first setting
         context.set_ipv6_first(ss_config.ipv6_first);
+        context.set_timestamp_limit(ss_config.timestamp_limit);
+        context.set_comply_with_incoming(ss_config.comply_with_incoming);
 
         Self {
             server_handle: Arc::new(RwLock::new(None)),

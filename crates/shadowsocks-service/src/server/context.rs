@@ -120,4 +120,16 @@ impl ServiceContext {
         let context = Arc::get_mut(&mut self.context).expect("cannot set security on a shared context");
         context.set_replay_attack_policy(security.replay_attack.policy);
     }
+
+    /// Set AEAD 2022 timestamp limit
+    pub fn set_timestamp_limit(&mut self, timestamp_limit: u64) {
+        let context = Arc::get_mut(&mut self.context).expect("cannot set timestamp limit on a shared context");
+        context.set_timestamp_limit(timestamp_limit);
+    }
+
+    /// Set AEAD 2022 timestamp limit comply with incoming
+    pub fn set_comply_with_incoming(&mut self, comply_with_incoming: bool) {
+        let context = Arc::get_mut(&mut self.context).expect("cannot set comply with incoming on a shared context");
+        context.set_comply_with_incoming(comply_with_incoming);
+    }
 }

@@ -4,7 +4,7 @@ use std::{
     fmt, io,
     marker::Unpin,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, atomic::AtomicI64},
     task::{self, Poll},
 };
 
@@ -100,8 +100,8 @@ impl GetUser for DecryptedReader {
 
 impl DecryptedReader {
     /// Create a new reader for reading encrypted data
-    pub fn new(stream_ty: StreamType, method: CipherKind, key: &[u8]) -> Self {
-        Self::with_user_manager(stream_ty, method, key, None)
+    pub fn new(stream_ty: StreamType, method: CipherKind, key: &[u8], timestamp_diff: Arc<AtomicI64>) -> Self {
+        Self::with_user_manager(stream_ty, method, key, None, timestamp_diff)
     }
 
     /// Create a new reader for reading encrypted data
@@ -110,6 +110,7 @@ impl DecryptedReader {
         method: CipherKind,
         key: &[u8],
         user_manager: Option<Arc<ServerUserManager>>,
+        timestamp_diff: Arc<AtomicI64>,
     ) -> Self {
         if cfg!(not(feature = "aead-cipher-2022")) {
             let _ = stream_ty;
@@ -132,6 +133,7 @@ impl DecryptedReader {
                 method,
                 key,
                 user_manager,
+                timestamp_diff,
             )),
         }
     }
@@ -215,7 +217,7 @@ pub enum EncryptedWriter {
 
 impl EncryptedWriter {
     /// Create a new writer for writing encrypted data
-    pub fn new(stream_ty: StreamType, method: CipherKind, key: &[u8], nonce: &[u8]) -> Self {
+    pub fn new(stream_ty: StreamType, method: CipherKind, key: &[u8], nonce: &[u8], timestamp_diff: Arc<AtomicI64>) -> Self {
         if cfg!(not(feature = "aead-cipher-2022")) {
             let _ = stream_ty;
         }
@@ -231,7 +233,7 @@ impl EncryptedWriter {
                 Self::None
             }
             #[cfg(feature = "aead-cipher-2022")]
-            CipherCategory::Aead2022 => Self::Aead2022(Aead2022EncryptedWriter::new(stream_ty, method, key, nonce)),
+            CipherCategory::Aead2022 => Self::Aead2022(Aead2022EncryptedWriter::new(stream_ty, method, key, nonce, timestamp_diff)),
         }
     }
 
@@ -242,6 +244,7 @@ impl EncryptedWriter {
         key: &[u8],
         nonce: &[u8],
         identity_keys: &[Bytes],
+        timestamp_diff: Arc<AtomicI64>,
     ) -> Self {
         if cfg!(not(feature = "aead-cipher-2022")) {
             let _ = stream_ty;
@@ -265,6 +268,7 @@ impl EncryptedWriter {
                 key,
                 nonce,
                 identity_keys,
+                timestamp_diff,
             )),
         }
     }
@@ -418,10 +422,12 @@ impl<S> CryptoStream<S> {
             }
         };
 
+        let timestamp_diff = Arc::new(AtomicI64::new(0));
+
         Self {
             stream,
-            dec: DecryptedReader::with_user_manager(stream_ty, method, key, user_manager),
-            enc: EncryptedWriter::with_identity(stream_ty, method, key, &iv, identity_keys),
+            dec: DecryptedReader::with_user_manager(stream_ty, method, key, user_manager, timestamp_diff.clone()),
+            enc: EncryptedWriter::with_identity(stream_ty, method, key, &iv, identity_keys, timestamp_diff),
             method,
             has_handshaked: false,
         }

@@ -19,4 +19,18 @@ pub struct UdpSocketControlData {
     pub packet_id: u64,
     /// Server user instance
     pub user: Option<Arc<ServerUser>>,
+    /// Timestamp diff for ComplyWithIncoming (local now - incoming timestamp)
+    pub timestamp_diff: i64,
+}
+
+impl UdpSocketControlData {
+    pub fn without_timestamp_diff(self) -> Self {
+        Self {
+            client_session_id: self.client_session_id,
+            server_session_id: self.server_session_id,
+            packet_id: self.packet_id,
+            user: self.user,
+            timestamp_diff: 0,
+        }
+    }
 }

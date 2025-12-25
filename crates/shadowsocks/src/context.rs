@@ -6,10 +6,7 @@ use byte_string::ByteStr;
 use log::warn;
 
 use crate::{
-    config::{ReplayAttackPolicy, ServerType},
-    crypto::CipherKind,
-    dns_resolver::DnsResolver,
-    security::replay::ReplayProtector,
+    config::{ReplayAttackPolicy, ServerType}, crypto::CipherKind, dns_resolver::DnsResolver, relay::tcprelay::proxy_stream::protocol::v2::SERVER_STREAM_TIMESTAMP_MAX_DIFF, security::replay::ReplayProtector
 };
 
 /// Service context
@@ -26,6 +23,10 @@ pub struct Context {
 
     // Connect IPv6 address first
     ipv6_first: bool,
+
+    // AEAD 2022 timestamp limit
+    timestamp_limit: u64,
+    comply_with_incoming: bool,
 }
 
 /// `Context` for sharing between services
@@ -39,6 +40,8 @@ impl Context {
             replay_policy: ReplayAttackPolicy::Default,
             dns_resolver: Arc::new(DnsResolver::system_resolver()),
             ipv6_first: false,
+            timestamp_limit: SERVER_STREAM_TIMESTAMP_MAX_DIFF,
+            comply_with_incoming: false,
         }
     }
 
@@ -159,5 +162,25 @@ impl Context {
     /// Get policy against replay attack
     pub fn replay_attack_policy(&self) -> ReplayAttackPolicy {
         self.replay_policy
+    }
+
+    /// Set AEAD 2022 timestamp limit
+    pub fn set_timestamp_limit(&mut self, timestamp_limit: u64) {
+        self.timestamp_limit = timestamp_limit;
+    }
+
+    /// Get AEAD 2022 timestamp limit
+    pub fn timestamp_limit(&self) -> u64 {
+        self.timestamp_limit
+    }
+
+    /// Set AEAD 2022 timestamp limit comply with incoming
+    pub fn set_comply_with_incoming(&mut self, comply_with_incoming: bool) {
+        self.comply_with_incoming = comply_with_incoming;
+    }
+
+    /// Get AEAD 2022 timestamp limit comply with incoming
+    pub fn comply_with_incoming(&self) -> bool {
+        self.comply_with_incoming
     }
 }

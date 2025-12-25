@@ -17,21 +17,21 @@ A lightweight V2Board node controller supporting Shadowsocks 2022 protocol. Auto
 ## 🚀 Quick Start
 
 ```bash
-sudo curl -fL https://raw.githubusercontent.com/chenx-dust/ss22v2b/main/install.sh | sudo bash
+curl -fL https://raw.githubusercontent.com/chenx-dust/ss22v2b/main/install.sh | bash
 ```
 
 After installation:
 
 ```bash
 # Edit configuration
-sudo nano /usr/local/etc/ss22v2b/config.toml
+nano /usr/local/etc/ss22v2b/config.toml
 
 # Start service
-sudo systemctl start ss22v2b
-sudo systemctl enable ss22v2b
+systemctl start ss22v2b
+systemctl enable ss22v2b
 
 # View logs
-sudo journalctl -u ss22v2b -f
+journalctl -u ss22v2b -f
 ```
 
 ## 📖 How It Works
@@ -87,6 +87,8 @@ All configuration items in `[shadowsocks]` section are optional:
 | `udp_mtu` | Integer | 1500 | UDP MTU size (bytes) |
 | `ipv6_first` | Boolean | false | Prefer IPv6 addresses |
 | `relay` | String | - | Relay Shadowsocks server URL |
+| `timestamp_limit` | Integer | 30 | AEAD 2022 timestamp tolerance (seconds) |
+| `comply_with_incoming` | Boolean | false | AEAD 2022 comply with incoming timestamp |
 
 ## 🔍 Logging Levels
 

@@ -48,7 +48,7 @@ use std::{
     marker::Unpin,
     pin::Pin,
     slice,
-    sync::Arc,
+    sync::{Arc, atomic::{AtomicI64, Ordering}},
     task::{self, Poll},
     time::SystemTime,
 };
@@ -63,7 +63,7 @@ use futures::ready;
 use log::{error, trace};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use super::{crypto_io::StreamType, proxy_stream::protocol::v2::SERVER_STREAM_TIMESTAMP_MAX_DIFF};
+use super::crypto_io::StreamType;
 use crate::{
     config::{ServerUser, ServerUserManager, method_support_eih},
     context::Context,
@@ -138,6 +138,7 @@ pub struct DecryptedReader {
     user_manager: Option<Arc<ServerUserManager>>,
     user: Option<Arc<ServerUser>>,
     has_handshaked: bool,
+    timestamp_diff: Arc<AtomicI64>,
 }
 
 impl GetUser for DecryptedReader {
@@ -148,8 +149,8 @@ impl GetUser for DecryptedReader {
 }
 
 impl DecryptedReader {
-    pub fn new(stream_ty: StreamType, method: CipherKind, key: &[u8]) -> Self {
-        Self::with_user_manager(stream_ty, method, key, None)
+    pub fn new(stream_ty: StreamType, method: CipherKind, key: &[u8], timestamp_diff: Arc<AtomicI64>) -> Self {
+        Self::with_user_manager(stream_ty, method, key, None, timestamp_diff)
     }
 
     pub fn with_user_manager(
@@ -157,6 +158,7 @@ impl DecryptedReader {
         method: CipherKind,
         key: &[u8],
         user_manager: Option<Arc<ServerUserManager>>,
+        timestamp_diff: Arc<AtomicI64>,
     ) -> Self {
         if method.salt_len() > 0 {
             Self {
@@ -173,6 +175,7 @@ impl DecryptedReader {
                 user_manager,
                 user: None,
                 has_handshaked: false,
+                timestamp_diff,
             }
         } else {
             Self {
@@ -189,6 +192,7 @@ impl DecryptedReader {
                 user_manager,
                 user: None,
                 has_handshaked: false,
+                timestamp_diff,
             }
         }
     }
@@ -375,8 +379,11 @@ impl DecryptedReader {
 
         let timestamp = header_reader.get_u64();
         let now = get_now_timestamp();
-        if now.abs_diff(timestamp) > SERVER_STREAM_TIMESTAMP_MAX_DIFF {
+        if context.timestamp_limit() > 0 && now.abs_diff(timestamp) > context.timestamp_limit() {
             return Err(ProtocolError::InvalidTimestamp(timestamp, now)).into();
+        }
+        if context.comply_with_incoming() {
+            self.timestamp_diff.store(now.wrapping_sub(timestamp).cast_signed(), Ordering::Release);
         }
 
         // Server respond packet will contain a request salt
@@ -529,13 +536,14 @@ pub struct EncryptedWriter {
     state: EncryptWriteState,
     salt: Bytes,
     request_salt: Option<Bytes>,
+    timestamp_diff: Arc<AtomicI64>,
 }
 
 impl EncryptedWriter {
     /// Creates a new EncryptedWriter
-    pub fn new(stream_ty: StreamType, method: CipherKind, key: &[u8], nonce: &[u8]) -> Self {
+    pub fn new(stream_ty: StreamType, method: CipherKind, key: &[u8], nonce: &[u8], timestamp_diff: Arc<AtomicI64>) -> Self {
         const EMPTY_IDENTITY: [Bytes; 0] = [];
-        Self::with_identity(stream_ty, method, key, nonce, &EMPTY_IDENTITY)
+        Self::with_identity(stream_ty, method, key, nonce, &EMPTY_IDENTITY, timestamp_diff)
     }
 
     /// Creates a new EncryptedWriter with identities
@@ -545,6 +553,7 @@ impl EncryptedWriter {
         key: &[u8],
         nonce: &[u8],
         identity_keys: &[Bytes],
+        timestamp_diff: Arc<AtomicI64>,
     ) -> Self {
         // nonce should be sent with the first packet
         let mut buffer = BytesMut::with_capacity(nonce.len() + identity_keys.len() * 16);
@@ -617,6 +626,7 @@ impl EncryptedWriter {
             state: EncryptWriteState::AssembleHeader,
             salt: Bytes::copy_from_slice(nonce),
             request_salt: None,
+            timestamp_diff,
         }
     }
 
@@ -669,7 +679,9 @@ impl EncryptedWriter {
                         StreamType::Server => 1,
                     };
                     self.buffer.put_u8(stream_ty);
-                    self.buffer.put_u64(get_now_timestamp());
+                    self.buffer.put_u64(
+                        get_now_timestamp().wrapping_sub_signed(self.timestamp_diff.load(Ordering::Acquire))
+                    );
                     if let Some(ref salt) = self.request_salt {
                         self.buffer.put_slice(salt);
                     }

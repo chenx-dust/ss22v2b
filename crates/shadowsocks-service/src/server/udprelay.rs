@@ -1,6 +1,6 @@
 //! Shadowsocks UDP server
 
-use std::{cell::RefCell, io, net::SocketAddr, sync::Arc, time::Duration};
+use std::{cell::RefCell, io, net::SocketAddr, sync::{Arc, atomic::{AtomicI64, Ordering}}, time::Duration};
 
 use bytes::Bytes;
 use futures::future;
@@ -477,6 +477,7 @@ struct UdpAssociationContext {
     client_session: Option<ClientSessionContext>,
     server_session_id: u64,
     server_packet_id: u64,
+    timestamp_diff: Arc<AtomicI64>,
     // Relay Server
     relay_cfg: Option<ServerConfig>,
     proxied_socket: Option<ProxySocket<OutboundUdpSocket>>,
@@ -543,6 +544,7 @@ impl UdpAssociationContext {
             // server_session_id must be generated randomly
             server_session_id: generate_server_session_id(),
             server_packet_id: 0,
+            timestamp_diff: Arc::new(AtomicI64::new(0)),
             relay_cfg,
             proxied_socket: None,
             // client_session_id must be random generated,
@@ -562,6 +564,9 @@ impl UdpAssociationContext {
         let mut outbound_ipv6_buffer = Vec::new();
         let mut proxied_buffer = Vec::new();
         let mut keepalive_interval = time::interval(Duration::from_secs(1));
+        let timestamp_diff = if self.context.context_ref().comply_with_incoming() {
+            Some(self.timestamp_diff.clone())
+        } else { None };
 
         loop {
             tokio::select! {
@@ -573,6 +578,11 @@ impl UdpAssociationContext {
                             break;
                         }
                     };
+
+                    if let (Some(control), Some(diff)) = (control.as_ref(), timestamp_diff.as_ref()) {
+                        diff.store(control.timestamp_diff, Ordering::Release);
+                    }
+                    let control = control.map(|c| c.without_timestamp_diff());
 
                     self.dispatch_received_packet(peer_addr, &target_addr, &data, &control).await;
                 }
@@ -969,6 +979,7 @@ impl UdpAssociationContext {
                 control.server_session_id = self.server_session_id;
                 control.packet_id = self.server_packet_id;
                 control.user.clone_from(&client_session.client_user);
+                control.timestamp_diff = self.timestamp_diff.load(Ordering::Acquire);
 
                 match self
                     .inbound

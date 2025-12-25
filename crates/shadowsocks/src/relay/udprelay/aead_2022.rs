@@ -84,7 +84,6 @@ use super::options::UdpSocketControlData;
 
 const CLIENT_SOCKET_TYPE: u8 = 0;
 const SERVER_SOCKET_TYPE: u8 = 1;
-const SERVER_PACKET_TIMESTAMP_MAX_DIFF: u64 = 30;
 
 /// AEAD 2022 protocol error
 #[derive(thiserror::Error, Debug)]
@@ -497,7 +496,7 @@ pub fn encrypt_client_payload_aead_2022(
     }
 
     dst.put_u8(CLIENT_SOCKET_TYPE);
-    dst.put_u64(get_now_timestamp());
+    dst.put_u64(get_now_timestamp().wrapping_sub_signed(control.timestamp_diff));
     dst.put_u16(padding_size as u16);
     if padding_size > 0 {
         unsafe {
@@ -552,9 +551,12 @@ pub fn decrypt_client_payload_aead_2022(
     let timestamp = cursor.get_u64();
 
     let now = get_now_timestamp();
-    if now.abs_diff(timestamp) > SERVER_PACKET_TIMESTAMP_MAX_DIFF {
+    if context.timestamp_limit() > 0 && now.abs_diff(timestamp) > context.timestamp_limit() {
         return Err(ProtocolError::InvalidTimestamp(timestamp, now));
     }
+    let timestamp_diff = if context.comply_with_incoming() {
+        now.wrapping_sub(timestamp).cast_signed()
+    } else { 0 };
 
     let padding_size = cursor.get_u16() as usize;
     if padding_size > 0 {
@@ -566,6 +568,7 @@ pub fn decrypt_client_payload_aead_2022(
         server_session_id: 0,
         packet_id,
         user,
+        timestamp_diff,
     };
 
     let addr = match Address::read_cursor(&mut cursor) {
@@ -613,7 +616,7 @@ pub fn encrypt_server_payload_aead_2022(
     dst.put_u64(control.server_session_id);
     dst.put_u64(control.packet_id);
     dst.put_u8(SERVER_SOCKET_TYPE);
-    dst.put_u64(get_now_timestamp());
+    dst.put_u64(get_now_timestamp().wrapping_sub_signed(control.timestamp_diff));
     dst.put_u64(control.client_session_id);
     dst.put_u16(padding_size as u16);
     if padding_size > 0 {
@@ -656,9 +659,12 @@ pub fn decrypt_server_payload_aead_2022(
     let timestamp = cursor.get_u64();
 
     let now = get_now_timestamp();
-    if now.abs_diff(timestamp) > SERVER_PACKET_TIMESTAMP_MAX_DIFF {
+    if context.timestamp_limit() > 0 && now.abs_diff(timestamp) > context.timestamp_limit() {
         return Err(ProtocolError::InvalidTimestamp(timestamp, now));
     }
+    let timestamp_diff = if context.comply_with_incoming() {
+        now.wrapping_sub(timestamp).cast_signed()
+    } else { 0 };
 
     let client_session_id = cursor.get_u64();
 
@@ -672,6 +678,7 @@ pub fn decrypt_server_payload_aead_2022(
         server_session_id,
         packet_id,
         user,
+        timestamp_diff,
     };
 
     let addr = match Address::read_cursor(&mut cursor) {

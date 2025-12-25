@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use shadowsocks_service::shadowsocks::config::Mode;
+use shadowsocks_service::shadowsocks::{config::Mode, relay::tcprelay::proxy_stream::protocol::v2::SERVER_STREAM_TIMESTAMP_MAX_DIFF};
 use std::time::Duration;
 
 use crate::v2board::ApiConfig;
@@ -71,6 +71,13 @@ pub struct ShadowsocksConfig {
     /// Shadowsocks server mode: "tcp_only", "udp_only", or "tcp_and_udp" (default: "tcp_and_udp")
     #[serde(default = "default_mode")]
     pub mode: Mode,
+
+    // AEAD 2022 timestamp limit in seconds (default: 30)
+    #[serde(default = "default_timestamp_limit")]
+    pub timestamp_limit: u64,
+
+    // AEAD 2022 complying with incoming timestamp (default: false)
+    pub comply_with_incoming: bool,
 }
 
 impl Default for ShadowsocksConfig {
@@ -88,6 +95,8 @@ impl Default for ShadowsocksConfig {
             udp_max_associations: None,
             udp_mtu: default_udp_mtu(),
             mode: default_mode(),
+            timestamp_limit: default_timestamp_limit(),
+            comply_with_incoming: false,
         }
     }
 }
@@ -123,4 +132,8 @@ fn default_udp_mtu() -> usize {
 
 fn default_mode() -> Mode {
     Mode::TcpAndUdp
+}
+
+fn default_timestamp_limit() -> u64 {
+    SERVER_STREAM_TIMESTAMP_MAX_DIFF
 }
