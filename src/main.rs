@@ -4,7 +4,7 @@ mod v2board;
 
 use async_trait::async_trait;
 use clap::Parser;
-use log::{debug, error, info};
+use log::{debug, info};
 use std::{error::Error, sync::Arc};
 
 use crate::config::Config;
@@ -42,7 +42,7 @@ impl EventCallback for ServerCallback {
         let server_manager = self.server_manager.clone();
         tokio::spawn(async move {
             if let Err(e) = server_manager.start_server(config).await {
-                error!("Failed to start server: {}", e);
+                panic!("Failed to start server: {}", e);
             }
         });
     }

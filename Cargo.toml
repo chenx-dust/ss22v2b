@@ -1,6 +1,6 @@
 [package]
 name = "ss22v2b"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 authors = ["Chenx Dust"]
 repository = "https://github.com/chenx-dust/ss22v2b"
