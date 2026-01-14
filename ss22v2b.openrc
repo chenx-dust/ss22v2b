@@ -1,0 +1,22 @@
+#!/sbin/openrc-run
+
+name="ss22v2b"
+description="ss22v2b server"
+
+command="/usr/local/bin/ss22v2b"
+command_args="--config ${config_file:-/usr/local/etc/ss22v2b/config.toml}"
+command_user="nobody"
+command_background=true
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="/var/log/${RC_SVCNAME}.log"
+error_log="/var/log/${RC_SVCNAME}.err"
+
+depend() {
+    need net
+    use dns
+    after firewall
+}
+
+start_pre() {
+    checkpath --file --owner $command_user --mode 0644 "$output_log" "$error_log"
+}

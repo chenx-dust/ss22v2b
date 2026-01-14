@@ -1,0 +1,12 @@
+# Configuration file for ss22v2b OpenRC service
+
+# Config file path
+# config_file="/usr/local/etc/ss22v2b/config.toml"
+
+# Environment variables
+# export RUST_LOG=warn
+
+# For multi-instance setup, you can create symlinks:
+# ln -s /etc/init.d/ss22v2b /etc/init.d/ss22v2b.instance1
+# Then create /etc/conf.d/ss22v2b.instance1 with:
+# config_file="/usr/local/etc/ss22v2b/instance1.toml"

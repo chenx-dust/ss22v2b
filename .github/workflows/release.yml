@@ -16,8 +16,16 @@ jobs:
             target: x86_64-unknown-linux-gnu
             bin: ss22v2b
             windows: false
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            bin: ss22v2b
+            windows: false
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
+            bin: ss22v2b
+            windows: false
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
             bin: ss22v2b
             windows: false
           - os: windows-latest
@@ -39,24 +47,38 @@ jobs:
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools (x86_64)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Install musl tools (aarch64)
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
       - name: Build (release, no tests)
-        run: cargo build --release --locked
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Rename binary
         shell: bash
         run: |
-          cd target/release
+          cd target/${{ matrix.target }}/release
           mv "${{ matrix.bin }}" "ss22v2b-${{ matrix.target }}${{ matrix.windows && '.exe' || '' }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
-          path: target/release/ss22v2b-${{ matrix.target }}${{ matrix.windows && '.exe' || '' }}
+          path: target/${{ matrix.target }}/release/ss22v2b-${{ matrix.target }}${{ matrix.windows && '.exe' || '' }}
 
   release:
     name: Publish Release
