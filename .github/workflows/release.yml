@@ -54,13 +54,13 @@ jobs:
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools
+          sudo apt-get install -y musl-tools musl-dev perl make
 
       - name: Install musl tools (aarch64)
         if: matrix.target == 'aarch64-unknown-linux-musl'
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu
+          sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu perl make
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gnu-gcc
 
@@ -68,9 +68,14 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build (release, no tests)
-        run: cargo build --release --locked --target ${{ matrix.target }}
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gnu-gcc
+        shell: bash
+        run: |
+          if [[ "${{ matrix.target }}" == *"musl"* ]]; then
+            # For musl targets, build without --locked to use vendored OpenSSL patch
+            cargo build --release --target ${{ matrix.target }}
+          else
+            cargo build --release --locked --target ${{ matrix.target }}
+          fi
 
       - name: Rename binary
         shell: bash

@@ -19,3 +19,7 @@ shadowsocks-service = { version = "1.24.0", path = "./crates/shadowsocks-service
 tokio = { version = "1.48.0", features = ["signal"] }
 toml = "0.9.10"
 bytes = "1.8.0"
+
+# Patch openssl-sys to enable vendored feature for musl targets
+[patch.crates-io]
+openssl-sys = { version = "0.9", features = ["vendored"] }
