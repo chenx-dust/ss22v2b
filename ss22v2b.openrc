@@ -18,5 +18,5 @@ depend() {
 }
 
 start_pre() {
-    checkpath --file --owner $command_user --mode 0644 "$output_log" "$error_log"
+    checkpath --file --owner $command_user --mode 0640 "$output_log" "$error_log"
 }

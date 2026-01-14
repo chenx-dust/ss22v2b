@@ -47,8 +47,18 @@ case "$ARCH" in
 esac
 
 # Detect libc type (glibc or musl)
-if ldd --version 2>&1 | grep -q musl; then
+# Check for musl by examining libc.so or using ldd
+LIBC="glibc"
+if [ -f /lib/ld-musl-x86_64.so.1 ] || [ -f /lib/ld-musl-aarch64.so.1 ]; then
     LIBC="musl"
+elif command -v ldd &> /dev/null && ldd --version 2>&1 | grep -q musl; then
+    LIBC="musl"
+elif [ -f /etc/alpine-release ]; then
+    # Alpine Linux uses musl by default
+    LIBC="musl"
+fi
+
+if [ "$LIBC" = "musl" ]; then
     case "$ARCH" in
         x86_64)
             TARGET="x86_64-unknown-linux-musl"
@@ -57,8 +67,6 @@ if ldd --version 2>&1 | grep -q musl; then
             TARGET="aarch64-unknown-linux-musl"
             ;;
     esac
-else
-    LIBC="glibc"
 fi
 echo "   ✓ Architecture: $ARCH ($TARGET, $LIBC)"
 
@@ -233,7 +241,7 @@ elif [[ "$INIT_SYSTEM" == "openrc" ]]; then
     echo "   sudo ln -s /etc/init.d/ss22v2b /etc/init.d/ss22v2b.instance1"
     echo ""
     echo "3. Create config file for instance:"
-    echo "   echo 'config_file=\"${CONFIG_DIR}/instance1.toml\"' | sudo tee /etc/conf.d/ss22v2b.instance1"
+    echo "   echo 'config_file=\"/usr/local/etc/ss22v2b/instance1.toml\"' | sudo tee /etc/conf.d/ss22v2b.instance1"
     echo ""
     echo "4. Start instance:"
     echo "   sudo rc-service ss22v2b.instance1 start"
