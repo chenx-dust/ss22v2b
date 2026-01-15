@@ -9,10 +9,21 @@ fi
 
 REPO="chenx-dust/ss22v2b"
 BIN_INSTALL_PATH="/usr/local/bin/ss22v2b"
-SYSTEMD_DIR="/etc/systemd/system"
 CONFIG_DIR="/usr/local/etc/ss22v2b"
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
+
+# Detect init system
+if command -v systemctl &> /dev/null && systemctl --version &> /dev/null; then
+    INIT_SYSTEM="systemd"
+    SERVICE_DIR="/etc/systemd/system"
+elif command -v rc-update &> /dev/null; then
+    INIT_SYSTEM="openrc"
+    SERVICE_DIR="/etc/init.d"
+    CONF_DIR="/etc/conf.d"
+else
+    INIT_SYSTEM="unknown"
+fi
 
 echo "============================================"
 echo "ss22v2b Installer"
@@ -34,7 +45,30 @@ case "$ARCH" in
         exit 1
         ;;
 esac
-echo "   ✓ Architecture: $ARCH ($TARGET)"
+
+# Detect libc type (glibc or musl)
+# Check for musl by examining libc.so or using ldd
+LIBC="glibc"
+if [ -f /lib/ld-musl-x86_64.so.1 ] || [ -f /lib/ld-musl-aarch64.so.1 ]; then
+    LIBC="musl"
+elif command -v ldd &> /dev/null && ldd --version 2>&1 | grep -q musl; then
+    LIBC="musl"
+elif [ -f /etc/alpine-release ]; then
+    # Alpine Linux uses musl by default
+    LIBC="musl"
+fi
+
+if [ "$LIBC" = "musl" ]; then
+    case "$ARCH" in
+        x86_64)
+            TARGET="x86_64-unknown-linux-musl"
+            ;;
+        aarch64)
+            TARGET="aarch64-unknown-linux-musl"
+            ;;
+    esac
+fi
+echo "   ✓ Architecture: $ARCH ($TARGET, $LIBC)"
 
 # Get latest release version
 echo ""
@@ -99,28 +133,54 @@ else
     echo "   ℹ Config file already exists, skipping"
 fi
 
-# 4. Install systemd service files
+# 4. Install service files
 echo ""
-echo "4. Installing systemd service files..."
-if curl -fL "https://raw.githubusercontent.com/$REPO/$VERSION/ss22v2b.service" -o "${SYSTEMD_DIR}/ss22v2b.service" 2>/dev/null; then
-    chmod 644 "${SYSTEMD_DIR}/ss22v2b.service"
-    echo "   ✓ Installed ss22v2b.service"
+if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+    echo "4. Installing systemd service files..."
+    if curl -fL "https://raw.githubusercontent.com/$REPO/$VERSION/ss22v2b.service" -o "${SERVICE_DIR}/ss22v2b.service" 2>/dev/null; then
+        chmod 644 "${SERVICE_DIR}/ss22v2b.service"
+        echo "   ✓ Installed ss22v2b.service"
+    else
+        echo "   ⚠ Warning: Could not download ss22v2b.service"
+    fi
+    
+    if curl -fL "https://raw.githubusercontent.com/$REPO/$VERSION/ss22v2b@.service" -o "${SERVICE_DIR}/ss22v2b@.service" 2>/dev/null; then
+        chmod 644 "${SERVICE_DIR}/ss22v2b@.service"
+        echo "   ✓ Installed ss22v2b@.service (for multi-instance)"
+    else
+        echo "   ⚠ Warning: Could not download ss22v2b@.service"
+    fi
+elif [[ "$INIT_SYSTEM" == "openrc" ]]; then
+    echo "4. Installing OpenRC service files..."
+    if curl -fL "https://raw.githubusercontent.com/$REPO/$VERSION/ss22v2b.openrc" -o "${SERVICE_DIR}/ss22v2b" 2>/dev/null; then
+        chmod 755 "${SERVICE_DIR}/ss22v2b"
+        echo "   ✓ Installed OpenRC service script to ${SERVICE_DIR}/ss22v2b"
+    else
+        echo "   ⚠ Warning: Could not download ss22v2b.openrc"
+    fi
+    
+    if curl -fL "https://raw.githubusercontent.com/$REPO/$VERSION/ss22v2b.openrc.confd" -o "${CONF_DIR}/ss22v2b" 2>/dev/null; then
+        chmod 644 "${CONF_DIR}/ss22v2b"
+        echo "   ✓ Installed OpenRC config to ${CONF_DIR}/ss22v2b"
+    else
+        echo "   ⚠ Warning: Could not download ss22v2b.openrc.confd"
+    fi
 else
-    echo "   ⚠ Warning: Could not download ss22v2b.service"
+    echo "4. Skipping service installation (no supported init system detected)"
 fi
 
-if curl -fL "https://raw.githubusercontent.com/$REPO/$VERSION/ss22v2b@.service" -o "${SYSTEMD_DIR}/ss22v2b@.service" 2>/dev/null; then
-    chmod 644 "${SYSTEMD_DIR}/ss22v2b@.service"
-    echo "   ✓ Installed ss22v2b@.service (for multi-instance)"
-else
-    echo "   ⚠ Warning: Could not download ss22v2b@.service"
-fi
-
-# 5. Reload systemd
+# 5. Reload service manager
 echo ""
-echo "5. Reloading systemd configuration..."
-systemctl daemon-reload
-echo "   ✓ systemd reloaded"
+if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+    echo "5. Reloading systemd configuration..."
+    systemctl daemon-reload
+    echo "   ✓ systemd reloaded"
+elif [[ "$INIT_SYSTEM" == "openrc" ]]; then
+    echo "5. OpenRC service installed"
+    echo "   ✓ Service ready"
+else
+    echo "5. Service manager configuration skipped"
+fi
 
 echo ""
 echo "============================================"
@@ -132,27 +192,68 @@ echo ""
 echo "1. Edit config file:"
 echo "   sudo nano ${CONFIG_DIR}/config.toml"
 echo ""
-echo "2. Start the service:"
-echo "   sudo systemctl start ss22v2b"
-echo ""
-echo "3. Enable auto-start on boot:"
-echo "   sudo systemctl enable ss22v2b"
-echo ""
-echo "4. Check service status:"
-echo "   sudo systemctl status ss22v2b"
-echo ""
-echo "5. View logs:"
-echo "   sudo journalctl -u ss22v2b -f"
-echo ""
-echo "Multi-Instance Mode (using ss22v2b@.service):"
-echo ""
-echo "1. Create config file:"
-echo "   sudo cp ${CONFIG_DIR}/config.toml ${CONFIG_DIR}/instance1.toml"
-echo "   sudo nano ${CONFIG_DIR}/instance1.toml"
-echo ""
-echo "2. Start instance:"
-echo "   sudo systemctl start ss22v2b@instance1"
-echo ""
-echo "3. Enable auto-start:"
-echo "   sudo systemctl enable ss22v2b@instance1"
-echo ""
+
+if [[ "$INIT_SYSTEM" == "systemd" ]]; then
+    echo "2. Start the service:"
+    echo "   sudo systemctl start ss22v2b"
+    echo ""
+    echo "3. Enable auto-start on boot:"
+    echo "   sudo systemctl enable ss22v2b"
+    echo ""
+    echo "4. Check service status:"
+    echo "   sudo systemctl status ss22v2b"
+    echo ""
+    echo "5. View logs:"
+    echo "   sudo journalctl -u ss22v2b -f"
+    echo ""
+    echo "Multi-Instance Mode (using ss22v2b@.service):"
+    echo ""
+    echo "1. Create config file:"
+    echo "   sudo cp ${CONFIG_DIR}/config.toml ${CONFIG_DIR}/instance1.toml"
+    echo "   sudo nano ${CONFIG_DIR}/instance1.toml"
+    echo ""
+    echo "2. Start instance:"
+    echo "   sudo systemctl start ss22v2b@instance1"
+    echo ""
+    echo "3. Enable auto-start:"
+    echo "   sudo systemctl enable ss22v2b@instance1"
+    echo ""
+elif [[ "$INIT_SYSTEM" == "openrc" ]]; then
+    echo "2. Start the service:"
+    echo "   sudo rc-service ss22v2b start"
+    echo ""
+    echo "3. Enable auto-start on boot:"
+    echo "   sudo rc-update add ss22v2b default"
+    echo ""
+    echo "4. Check service status:"
+    echo "   sudo rc-service ss22v2b status"
+    echo ""
+    echo "5. View logs:"
+    echo "   sudo tail -f /var/log/ss22v2b.log"
+    echo ""
+    echo "Multi-Instance Mode (using symlinks):"
+    echo ""
+    echo "1. Create config file:"
+    echo "   sudo cp ${CONFIG_DIR}/config.toml ${CONFIG_DIR}/instance1.toml"
+    echo "   sudo nano ${CONFIG_DIR}/instance1.toml"
+    echo ""
+    echo "2. Create service symlink:"
+    echo "   sudo ln -s /etc/init.d/ss22v2b /etc/init.d/ss22v2b.instance1"
+    echo ""
+    echo "3. Create config file for instance:"
+    echo "   echo 'config_file=\"/usr/local/etc/ss22v2b/instance1.toml\"' | sudo tee /etc/conf.d/ss22v2b.instance1"
+    echo ""
+    echo "4. Start instance:"
+    echo "   sudo rc-service ss22v2b.instance1 start"
+    echo ""
+    echo "5. Enable auto-start:"
+    echo "   sudo rc-update add ss22v2b.instance1 default"
+    echo ""
+else
+    echo "2. Start the service manually:"
+    echo "   ${BIN_INSTALL_PATH} --config ${CONFIG_DIR}/config.toml"
+    echo ""
+    echo "   Note: No supported init system detected."
+    echo "   You may need to configure service management manually."
+    echo ""
+fi
