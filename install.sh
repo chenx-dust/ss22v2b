@@ -105,6 +105,9 @@ echo "   ✓ Binary downloaded successfully"
 # 1. Install binary
 echo ""
 echo "1. Installing binary..."
+if [[ -f "$BIN_INSTALL_PATH" ]]; then
+    rm "$BIN_INSTALL_PATH"
+fi
 cp "$BINARY" "$BIN_INSTALL_PATH"
 chmod 755 "$BIN_INSTALL_PATH"
 echo "   ✓ Binary installed to $BIN_INSTALL_PATH"
