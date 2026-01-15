@@ -77,6 +77,7 @@ pub struct ShadowsocksConfig {
     pub timestamp_limit: u64,
 
     // AEAD 2022 complying with incoming timestamp (default: false)
+    #[serde(default = "default_comply_with_incoming")]
     pub comply_with_incoming: bool,
 }
 
@@ -136,4 +137,8 @@ fn default_mode() -> Mode {
 
 fn default_timestamp_limit() -> u64 {
     SERVER_STREAM_TIMESTAMP_MAX_DIFF
+}
+
+fn default_comply_with_incoming() -> bool {
+    false
 }
